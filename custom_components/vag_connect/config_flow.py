@@ -340,6 +340,11 @@ def _wall_screen(err_str: str) -> str:
     return err_str.partition(":")[2].partition("|")[0]
 
 
+# v4.7.10 — hassfest forbids literal URLs in translated strings; the
+# porsche_portal_step abort text refers to the portal via this placeholder.
+_PORSCHE_PORTAL_URL = "https://my.porsche.com"
+
+
 def _porsche_wall_reason(screen: str) -> str:
     """v4.7.10 (#1400, #1337, #1414) — pick the abort reason from a wall's
     ``<screen>`` string (``"<host>/<path-or-acul-screen>"``).
@@ -847,6 +852,7 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                     return self.async_abort(
                         reason=reason,
                         description_placeholders={
+                            "portal_url": _PORSCHE_PORTAL_URL,
                             "report_url": self._porsche_report_url(
                                 "email_password", reason, screen,
                             ),
@@ -2146,6 +2152,7 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
             return self.async_abort(
                 reason=reason,
                 description_placeholders={
+                    "portal_url": _PORSCHE_PORTAL_URL,
                     "report_url": self._porsche_report_url(
                         self._porsche_captcha_return or "porsche_captcha", reason,
                         screen,
@@ -2296,6 +2303,7 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 "captcha_img": self._porsche_captcha_img_html(
                     self._porsche_captcha_image
                 ),
+                "portal_url": _PORSCHE_PORTAL_URL,
                 "report_url": self._porsche_report_url(
                     self._porsche_captcha_return or "porsche_captcha",
                     "porsche_captcha",
@@ -2364,6 +2372,7 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                     return self.async_abort(
                         reason=reason,
                         description_placeholders={
+                            "portal_url": _PORSCHE_PORTAL_URL,
                             "report_url": self._porsche_report_url(
                                 "reauth", reason, screen,
                             ),
@@ -2550,6 +2559,7 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                     return self.async_abort(
                         reason=reason,
                         description_placeholders={
+                            "portal_url": _PORSCHE_PORTAL_URL,
                             "report_url": self._porsche_report_url(
                                 "reconfigure", reason, screen,
                             ),
