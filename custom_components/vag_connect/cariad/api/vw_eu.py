@@ -2057,12 +2057,22 @@ class VWEUClient(CariadBaseClient):
         means the modern gate is reachable and the existing ``authorization/v2``
         S-PIN command handshake could be wired for these cars.
 
+        v4.7.10 (#584/#923): also probes the legacy ``operationlist/v3`` on the
+        EU-DP host — the first real sample (Touran 2024) 404'd on both fetched-role
+        hosts while operationlist/v3 on ``mal-1a.prd.ece`` answered 401, so this
+        third data point tells us whether ``mal-3a.prd.eu.dp`` serves
+        ``/api/rolesrights`` at all. Any 404 additionally records a body CLASS
+        suffix (``404 gateway`` vs ``404``) to separate a Cariad wrapper-404 from a
+        plain rolesrights 404 — status + class only, never the body.
+
         One-shot per VIN. Never raises, never refreshes, never writes to the car.
         """
         from .._mbb import (  # noqa: PLC0415
             MBB_EUDP_SETTER_BASE,
             MBB_SETTER_BASE,
             build_mbb_fetched_role_url,
+            build_mbb_operationlist_url,
+            is_cariad_wrapper_404,
             mbb_brand_segment,
         )
 
@@ -2074,13 +2084,36 @@ class VWEUClient(CariadBaseClient):
 
         country = self._mbb_country_from_id_token() or "DE"
         seg = mbb_brand_segment(self._brand.name)
+        # v4.7.10 (#584/#923): each probe carries its own (key, url) because the
+        # two rolesrights surfaces have different builders. The fetched-role gate
+        # is {Brand}/{country}-scoped; operationlist/v3 is VIN-only. The keys keep
+        # the seg/country dimension uniform for diagnostics regardless.
         targets = [
-            ("eudp", MBB_EUDP_SETTER_BASE),  # modern host the shipping app uses
-            ("ece", MBB_SETTER_BASE),        # legacy host, as a fallback data point
+            # fetched-role gate — modern host the shipping app uses, then legacy
+            (
+                f"fetched_role:eudp:{seg}/{country}",
+                build_mbb_fetched_role_url(
+                    MBB_EUDP_SETTER_BASE, self._brand.name, country, vin
+                ),
+            ),
+            (
+                f"fetched_role:ece:{seg}/{country}",
+                build_mbb_fetched_role_url(
+                    MBB_SETTER_BASE, self._brand.name, country, vin
+                ),
+            ),
+            # v4.7.10 (#584/#923): third data point — does mal-3a.prd.eu.dp serve
+            # /api/rolesrights at all? Touran 2024 first sample 404'd on BOTH
+            # fetched-role hosts while operationlist/v3 on mal-1a.prd.ece answered
+            # 401 (route exists there). Probing operationlist/v3 on the EU-DP host
+            # tells us whether the modern host carries the legacy rolesrights
+            # surface or 404s it — decides where the S-PIN handshake can wire up.
+            (
+                f"operationlist_v3:eudp:{seg}/{country}",
+                build_mbb_operationlist_url(MBB_EUDP_SETTER_BASE, vin),
+            ),
         ]
-        for label, base in targets:
-            url = build_mbb_fetched_role_url(base, self._brand.name, country, vin)
-            key = f"fetched_role:{label}:{seg}/{country}"
+        for key, url in targets:
             try:
                 async with self._session.get(
                     url, headers=self._mbb_headers()
@@ -2095,6 +2128,14 @@ class VWEUClient(CariadBaseClient):
                 # Record only that it was a 200 with a role payload (no values).
                 has_role = '"role"' in body or "fetched" in body.lower()
                 self.probe_outcomes[key] = "200 role" if has_role else "200"
+            elif status == 404:
+                # v4.7.10 (#584/#923): a 404 is ambiguous — a Cariad/gateway
+                # wrapper-404 (upstream unreachable, route present) vs a plain
+                # rolesrights 404 (route absent on this host). Record the body
+                # CLASS only via is_cariad_wrapper_404 — never the body itself.
+                self.probe_outcomes[key] = (
+                    "404 gateway" if is_cariad_wrapper_404(body) else "404"
+                )
             else:
                 self.probe_outcomes[key] = str(status)
         _LOGGER.debug(

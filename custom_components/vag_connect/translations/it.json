@@ -216,6 +216,7 @@
       "mbb_fallback_armed": "Connessione di riserva configurata. Se la connessione normale del tuo Audi dovesse mai smettere di accettare i comandi a distanza, blocca/sblocca, clima e ricarica passano automaticamente alla riserva. Nel quotidiano non cambia nulla.",
       "no_devicegrant_audi": "Nessun Audi corrispondente trovato. Questa riserva vale solo per un Audi che hai aggiunto con il login QR / app e che non ce l'ha già. Aggiungi prima il tuo Audi in quel modo, poi torna qui.",
       "porsche_login_wall": "Le tue credenziali sono corrette — l'accesso ha superato il passaggio della password, ma si è fermato a una schermata captcha/consenso di Porsche che non può completare automaticamente (vista su my.porsche.com). È un blocco lato Porsche, tracciato in #1337, non una password errata. Non riprovare in un ciclo — tentativi ripetuti hanno bloccato account Porsche. Se puoi, segnalalo così possiamo risolverlo (allega la diagnostica): {report_url}",
+      "porsche_portal_step": "Porsche ha inoltrato questo accesso al suo portale web (my.porsche.com) per un passaggio una tantum che l'integrazione non può completare da sola. Apri {portal_url} in un normale browser — preferibilmente sulla stessa rete di Home Assistant — accedi con lo stesso account, completa ciò che mostra (consenso, termini, avviso sui cookie), quindi torna qui e riprova. Non riprovare in un ciclo: tentativi falliti ripetuti hanno bloccato account Porsche. Ancora bloccato? Segnalalo qui: {report_url}",
       "porsche_captcha_failed": "Impossibile verificare il captcha ed è ormai scaduto. Chiudi questa finestra e riavvia l'accesso Porsche per ottenerne uno nuovo. Se puoi, segnalalo così possiamo risolverlo (allega la diagnostica): {report_url}",
       "porsche_captcha_cooldown": "Troppi tentativi di captcha. Tentativi ripetuti possono far bloccare temporaneamente l'account da parte di Porsche o segnalare la tua rete, quindi l'operazione è stata interrotta per proteggere il tuo account. Attendi qualche minuto prima di riprovare. Se puoi, segnalalo così possiamo risolverlo (allega la diagnostica): {report_url}",
       "reconfigure_failed": "Riconfigurazione non riuscita: voce di configurazione non trovata. Riprova.",
@@ -1013,6 +1014,18 @@
       },
       "charging_plug1_lock_state": {
         "name": "Blocco spina presa di ricarica 1"
+      },
+      "flap_state": {
+        "name": "Sportello ricarica/carburante"
+      },
+      "flap_lock_state": {
+        "name": "Blocco sportello"
+      },
+      "flap_error_state": {
+        "name": "Stato errore sportello"
+      },
+      "plug_lock_state": {
+        "name": "Blocco spina di ricarica"
       },
       "charging_plug2_connectionstate": {
         "name": "Connessione presa di ricarica 2"

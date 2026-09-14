@@ -121,6 +121,43 @@ async def test_post_password_wall_aborts_with_report() -> None:
     assert "report_url" in res["description_placeholders"]
 
 
+# ── v4.7.10 (#1400): a web-portal hop aborts with its own reason ───────────────
+def test_porsche_wall_reason_splits_identity_from_web_portal() -> None:
+    from custom_components.vag_connect.config_flow import _porsche_wall_reason
+    # identity.porsche.com ACUL screens keep the generic captcha/consent wall
+    assert _porsche_wall_reason("identity.porsche.com/unknown") == "porsche_login_wall"
+    assert _porsche_wall_reason("identity.porsche.com/passkey-enrollment") == "porsche_login_wall"
+    # any OTHER porsche.com host is the web portal step
+    assert _porsche_wall_reason("my.porsche.com/ui/de/de_DE/start") == "porsche_portal_step"
+    assert _porsche_wall_reason("porsche.com/consent") == "porsche_portal_step"
+    # the "?" unknown-host fallback and empty string stay generic
+    assert _porsche_wall_reason("?/unknown") == "porsche_login_wall"
+    assert _porsche_wall_reason("") == "porsche_login_wall"
+
+
+@pytest.mark.asyncio
+async def test_post_password_web_portal_aborts_with_portal_step_and_path() -> None:
+    f = _flow()
+    err = ValueError("porsche_login_wall:my.porsche.com/ui/de/de_DE/start|markers=cookie")
+    with patch(_VALIDATE, new=AsyncMock(side_effect=err)):
+        res = await f.async_step_porsche_captcha({CONF_CAPTCHA_CODE: "AAAA"})
+    assert res["type"] == "abort"
+    assert res["reason"] == "porsche_portal_step"
+    # the one-click report carries the path-only screen (no query)
+    url = res["description_placeholders"]["report_url"]
+    assert "my.porsche.com" in url and "start" in url
+
+
+@pytest.mark.asyncio
+async def test_post_password_identity_wall_keeps_login_wall_reason() -> None:
+    f = _flow()
+    err = ValueError("porsche_login_wall:identity.porsche.com/unknown|markers=consent")
+    with patch(_VALIDATE, new=AsyncMock(side_effect=err)):
+        res = await f.async_step_porsche_captcha({CONF_CAPTCHA_CODE: "AAAA"})
+    assert res["type"] == "abort"
+    assert res["reason"] == "porsche_login_wall"
+
+
 @pytest.mark.asyncio
 async def test_transient_network_error_reshows_form_not_abort() -> None:
     f = _flow()
@@ -219,3 +256,18 @@ def test_new_strings_present_and_report_placeholder_wired() -> None:
     assert "{report_url}" in cfg["abort"]["porsche_captcha_failed"]
     assert "{report_url}" in cfg["abort"]["porsche_captcha_cooldown"]
     assert "{report_url}" in cfg["step"]["porsche_captcha"]["description"]
+
+
+def test_porsche_portal_step_string_present_in_all_13_files() -> None:
+    # v4.7.10 (#1400) — the new web-portal abort must exist (with its report
+    # placeholder) in strings.json AND every one of the 12 translations.
+    import json
+    import pathlib
+
+    base = pathlib.Path(__file__).resolve().parents[1] / "custom_components" / "vag_connect"
+    files = [base / "strings.json"] + sorted((base / "translations").glob("*.json"))
+    assert len(files) == 13, [f.name for f in files]
+    for f in files:
+        cfg = json.loads(f.read_text(encoding="utf-8"))["config"]
+        assert "porsche_portal_step" in cfg["abort"], f.name
+        assert "{report_url}" in cfg["abort"]["porsche_portal_step"], f.name

@@ -528,6 +528,38 @@ def test_direct_body_wall_names_the_screen() -> None:
         assert secret not in ei.value.screen and secret not in ei.value.marker
 
 
+def test_web_portal_step_wall_records_path_only_no_query(monkeypatch) -> None:
+    # v4.7.10 (#1400, #1414) — after a correct password Auth0 can 302 the login
+    # off to Porsche's WEB portal (my.porsche.com), which answers 200 with no
+    # ACUL context: a one-time portal step the headless flow can't complete. The
+    # wall must name that hop by its URL PATH (never the query, which carries
+    # state/iss) so the report/abort points the user at the actual portal step
+    # instead of a useless "my.porsche.com/unknown".
+    monkeypatch.setattr(auth_mod.asyncio, "sleep", AsyncMock())
+    portal_url = "https://my.porsche.com/ui/de/de_DE/start?state=S1&iss=secretiss"
+    session = _session(
+        get_responses=[
+            _Resp(302, location="https://identity.porsche.com/u/login/identifier?state=S1"),
+            _Resp(302, location=portal_url),  # resume hop bounces to the web portal
+            _Resp(200, text="<html><title>Willkommen</title><body>cookie consent</body></html>"),
+        ],
+        post_responses=[
+            _Resp(200),                                     # identifier
+            _Resp(302, location="/authorize/resume?state=S1"),  # password → resume
+        ],
+    )
+    auth = auth_mod.PorscheAuth(session)
+    with pytest.raises(auth_mod.PorscheLoginWallError) as ei:
+        asyncio.run(auth.authenticate("a@b.com", "pw"))
+    # path only, and it is a non-identity porsche.com host (→ portal_step reason)
+    assert ei.value.screen == "my.porsche.com/ui/de/de_DE/start"
+    assert not ei.value.screen.startswith("identity.porsche.com/")
+    assert "?" not in ei.value.screen           # query never leaks into the label
+    assert ei.value.marker                      # secret-free page marker present
+    for secret in ("S1", "secretiss", "a@b.com", "pw"):
+        assert secret not in ei.value.screen and secret not in ei.value.marker
+
+
 def test_wall_screen_is_reset_per_attempt(monkeypatch) -> None:
     async def fake_follow(self, location, referer, verifier=""):
         return "CODE"

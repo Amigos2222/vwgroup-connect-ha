@@ -216,6 +216,7 @@
       "mbb_fallback_armed": "Połączenie zapasowe skonfigurowane. Jeśli zwykłe połączenie Twojego Audi kiedyś przestanie przyjmować polecenia zdalne, ryglowanie/odryglowanie, klimatyzacja i ładowanie automatycznie przełączą się na zapasowe. Na co dzień nic się nie zmienia.",
       "no_devicegrant_audi": "Nie znaleziono pasującego Audi. To połączenie zapasowe dotyczy tylko Audi dodanego przez logowanie QR / aplikacją, które jeszcze go nie ma. Najpierw dodaj w ten sposób swoje Audi, a potem wróć tutaj.",
       "porsche_login_wall": "Twoje dane logowania są poprawne — logowanie przeszło etap hasła, ale zatrzymało się na ekranie captcha/zgody Porsche, którego nie da się ukończyć automatycznie (widziany pod my.porsche.com). To blokada po stronie Porsche, śledzona w #1337, a nie błędne hasło. Nie ponawiaj w pętli — powtarzane próby blokowały konta Porsche. Jeśli możesz, zgłoś to, abyśmy mogli to naprawić (dołącz diagnostykę): {report_url}",
+      "porsche_portal_step": "Porsche przekierował to logowanie do swojego portalu internetowego (my.porsche.com) w celu wykonania jednorazowego kroku, którego integracja nie może wykonać sama. Otwórz {portal_url} w zwykłej przeglądarce — najlepiej w tej samej sieci co Home Assistant — zaloguj się tym samym kontem, wykonaj to, co się pojawi (zgoda, warunki, informacja o plikach cookie), a następnie wróć tutaj i spróbuj ponownie. Nie ponawiaj w pętli: powtarzane nieudane próby blokowały konta Porsche. Nadal nie działa? Zgłoś to tutaj: {report_url}",
       "porsche_captcha_failed": "Nie udało się zweryfikować captchy i jest ona już zużyta. Zamknij to okno i uruchom logowanie Porsche ponownie, aby otrzymać nową. Jeśli możesz, zgłoś to, abyśmy mogli to naprawić (dołącz diagnostykę): {report_url}",
       "porsche_captcha_cooldown": "Zbyt wiele prób captchy. Powtarzane próby mogą spowodować, że Porsche tymczasowo zablokuje konto lub oznaczy Twoją sieć, dlatego przerwano działanie, aby chronić Twoje konto. Odczekaj kilka minut przed ponowną próbą. Jeśli możesz, zgłoś to, abyśmy mogli to naprawić (dołącz diagnostykę): {report_url}",
       "reconfigure_failed": "Ponowna konfiguracja nie powiodła się: nie znaleziono wpisu konfiguracji. Spróbuj ponownie.",
@@ -1013,6 +1014,18 @@
       },
       "charging_plug1_lock_state": {
         "name": "Blokada wtyczki ładowania 1"
+      },
+      "flap_state": {
+        "name": "Klapka ładowania/wlewu"
+      },
+      "flap_lock_state": {
+        "name": "Blokada klapki"
+      },
+      "flap_error_state": {
+        "name": "Stan błędu klapki"
+      },
+      "plug_lock_state": {
+        "name": "Blokada wtyczki ładowania"
       },
       "charging_plug2_connectionstate": {
         "name": "Połączenie gniazda ładowania 2"

@@ -15,6 +15,8 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import hashlib
+import json
 import logging
 import threading
 from typing import Any
@@ -981,6 +983,57 @@ class FeatureState:
     retry_after: datetime | None = None
 
 
+def entry_settings_fingerprint(
+    data: Any | None, options: Any | None
+) -> str:
+    """v4.7.10 (#465, toglo) — a stable content hash of an entry's (data,
+    options) pair, used by ``_async_update_listener`` to tell a coordinator-owned
+    persistence write (rotated vw.de/MBB cookies+tokens, kickoff/state
+    bookkeeping) apart from a genuine user options save. Sorted-key JSON so key
+    order never matters; ``dict(...)`` coerces HA's read-only MappingProxy;
+    ``default=str`` tolerates the odd non-JSON value; SHA-256 so no cookie or
+    token material ever lingers in the stored fingerprint or a log line."""
+    try:
+        blob = json.dumps(
+            {"data": dict(data or {}), "options": dict(options or {})},
+            sort_keys=True, default=str,
+        )
+    except (TypeError, ValueError):
+        blob = repr((sorted(dict(data or {}).items(), key=lambda kv: kv[0]),
+                     sorted(dict(options or {}).items(), key=lambda kv: kv[0])))
+    return hashlib.sha256(blob.encode("utf-8", "replace")).hexdigest()
+
+
+def _self_update_entry(
+    coordinator: Any, *, data: Any | None = None, options: Any | None = None
+) -> None:
+    """v4.7.10 (#465, toglo) — the single funnel for EVERY coordinator-owned
+    entry write. It records the fingerprint of the resulting (data, options)
+    state BEFORE the write so ``_async_update_listener`` recognises our own
+    write and skips its settings-changed refresh. Without this, each poll's
+    cookie/token rotation looked like a user settings save -> the listener
+    called ``async_request_refresh`` -> the next poll rotated again -> a
+    self-sustaining ~10-16 s refresh loop that hammered identity.vwgroup.io
+    and flip-flopped the Datenquelle sensors. Race-free: HA fires update
+    listeners as tasks AFTER the write, so every pending listener observes
+    this final state and matches (last write wins). Args mirror
+    ``async_update_entry``: pass ``data`` and/or ``options``; whichever is
+    omitted is left untouched (its current value seeds the fingerprint)."""
+    # Module-level on purpose: the kickoff/persist paths are exercised in tests
+    # through SimpleNamespace stand-ins for ``self`` that carry no methods.
+    entry = coordinator.entry
+    # getattr: test stand-ins for ``entry`` may carry only ``data``.
+    new_data = getattr(entry, "data", {}) if data is None else data
+    new_options = getattr(entry, "options", {}) if options is None else options
+    coordinator._self_entry_write_fp = entry_settings_fingerprint(new_data, new_options)
+    kwargs: dict[str, Any] = {}
+    if data is not None:
+        kwargs["data"] = data
+    if options is not None:
+        kwargs["options"] = options
+    coordinator.hass.config_entries.async_update_entry(entry, **kwargs)
+
+
 class VagConnectCoordinator(DataUpdateCoordinator):
     """Coordinates vehicle data via own CARIAD API client (direct async polling).
 
@@ -997,6 +1050,14 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         # #465/#1027 — the portal sign-in interstitial Repair we last surfaced
         # (e.g. "terms_and_conditions"), so a good login clears exactly it, once.
         self._portal_interaction_reason: str = ""
+        # v4.7.10 (#465, toglo) — fingerprint of the (data, options) state of the
+        # LAST entry write WE originated (via ``_self_update_entry``). The update
+        # listener compares the live entry against this and skips its
+        # settings-changed refresh when they match, so our own cookie/token
+        # persistence writes can't drive a self-sustaining refresh loop. None
+        # until we've written once; never cleared (a genuine user change yields a
+        # different fingerprint, so a stale value can never suppress a real save).
+        self._self_entry_write_fp: str | None = None
 
         # v2.0.0 (Big-Bang) — Push manager lifecycle slots.
         # Wired by ``async_start_push_manager`` after the first
@@ -1444,7 +1505,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                     k: v for k, v in self.entry.data.items()
                     if k != "porsche_initial_tokens"
                 }
-                self.hass.config_entries.async_update_entry(self.entry, data=_cleaned)
+                _self_update_entry(self, data=_cleaned)
 
         # VW EU Two-Way (650d46ca): when armed, the modern-BFF device-grant token
         # is the PRIMARY. Activate it from entry.data on the config_flow reload
@@ -2180,8 +2241,8 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 )
 
         if changed:
-            self.hass.config_entries.async_update_entry(
-                self.entry,
+            _self_update_entry(
+                self,
                 options={
                     **self.entry.options,
                     CONF_DATA_ACT_IDENTIFIERS: new_map,
@@ -2353,8 +2414,8 @@ class VagConnectCoordinator(DataUpdateCoordinator):
     def _persist_historical_state(self) -> None:
         from .const import CONF_HISTORICAL_EXPORT_STATE  # noqa: PLC0415
         try:
-            self.hass.config_entries.async_update_entry(
-                self.entry,
+            _self_update_entry(
+                self,
                 data={
                     **self.entry.data,
                     CONF_HISTORICAL_EXPORT_STATE: dict(self._historical_state()),
@@ -3229,8 +3290,9 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         self._arm_official_from_map(full)
         # Persist for the next restart so we never re-mint (idempotent: a second run
         # sees the same data and async_update_entry is a no-op → no reload loop).
-        self.hass.config_entries.async_update_entry(
-            self.entry, data={**self.entry.data, CONF_SKODA_OFFICIAL_KEYS: full})
+        _self_update_entry(
+            self,
+            data={**self.entry.data, CONF_SKODA_OFFICIAL_KEYS: full})
         repairs.raise_issue_skoda_official_enrolled(self.hass, self.entry.entry_id)
         # Keys minted → the manual key+VIN fallback is no longer needed.
         repairs.clear_issue_skoda_official_manual_key(self.hass, self.entry.entry_id)
@@ -3465,14 +3527,20 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                     " — BFF commands unaffected.", type(err).__name__,
                 )
 
+    def _self_update_entry(
+        self, *, data: Any | None = None, options: Any | None = None
+    ) -> None:
+        """See the module-level ``_self_update_entry``."""
+        _self_update_entry(self, data=data, options=options)
+
     async def _persist_mbb_command_tokens(self, tokens: Any) -> None:
         """b12 — write the MBB command channel's rotated bearer back to
         entry.data[CONF_MBB_COMMAND_TOKENS] so the durable refresh survives a
         restart. Separate from the primary's token storage. Fail-soft."""
         from .const import CONF_MBB_COMMAND_TOKENS  # noqa: PLC0415
         try:
-            self.hass.config_entries.async_update_entry(
-                self.entry,
+            _self_update_entry(
+                self,
                 data={
                     **self.entry.data,
                     CONF_MBB_COMMAND_TOKENS: {
@@ -3495,8 +3563,8 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         if not isinstance(tokens, dict):
             return
         try:
-            self.hass.config_entries.async_update_entry(
-                self.entry,
+            _self_update_entry(
+                self,
                 data={
                     **self.entry.data,
                     CONF_SUPPLEMENTARY_TIBBER_TOKENS: {
@@ -3543,6 +3611,15 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             # Still attribute what we did get — losing provenance exactly when
             # a channel misbehaves is when it's most worth having.
             return annotate_provenance(self._primary_channel_name(), primary)
+        # v4.7.10 (#465, toglo) — when every supplier failed or returned nothing,
+        # gather_and_merge hands back the bare primary with no provenance, and the
+        # rare all-default merge leaves source_channel None too. A healthy cycle
+        # (no-suppliers branch above, or a contributing merge) always names an
+        # origin, so leaving it None here flip-flopped the per-source/Datenquelle
+        # sensor between polls. Attribute it to the primary channel like every
+        # other single-channel reading.
+        if getattr(merged, "source_channel", None) is None:
+            merged = annotate_provenance(self._primary_channel_name(), merged)
         # #966 — the suppliers just ran a vw.de read, which may have silently
         # refreshed the session and rotated its cookie jar. Persist the rotated
         # cookies now, after EVERY supplementary read, not only at arm and once at
@@ -6769,13 +6846,48 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                     # refresh never blanks a field (and a backwards odometer is
                     # rejected). A never-seen VIN still falls through.
                     if getattr(result, "no_data", False) and self.vehicles.get(vin):
-                        continue
-                    merged = await self._merge_supplementary(vin, result)
+                        # v4.7.10 (#465) — parity with the poll loop
+                        # (coordinator.py:3999/4027): a no-data primary must
+                        # still (a) re-provision the portal data request so
+                        # "no data comes in" self-heals, and (b) attempt a
+                        # supplementary-channel revive before dropping to
+                        # stale-cache. Previously this path bailed straight to
+                        # ``continue``, so an entry whose primary went no-data
+                        # was revived on the timed poll but NOT on the manual /
+                        # post-command refresh. Fail-soft: any error → keep the
+                        # last-known-good visible exactly as before.
+                        await self._maybe_runtime_data_act_kickoff()
+                        revived = await self._revive_from_supplementary(
+                            vin, result
+                        )
+                        if revived is None:
+                            continue
+                        # revive already ran the supplementary merge over the
+                        # empty primary → use it directly (mirror the poll
+                        # loop, which does NOT re-merge a revived snapshot).
+                        merged = revived
+                    else:
+                        merged = await self._merge_supplementary(vin, result)
                     data = merged.to_dict()
                     data["_client"] = client
                     enriched = await self._enrich(data)
                     from .cariad.vehicle_cache import reconcile  # noqa: PLC0415
                     enriched, _disc = reconcile(self.vehicles.get(vin), enriched)
+                    # v4.7.10 (#465, toglo) — recompute the per-source
+                    # connectivity map the SAME fail-soft way the poll loop does
+                    # (see ~4160). This command-refresh path had skipped it, so
+                    # after every command the connectivity binary_sensors + the
+                    # Datenquelle sensor snapped to the last poll's map (or blank
+                    # for a never-polled VIN) and flipped back on the next tick.
+                    try:
+                        enriched["channel_status"] = self._compute_channel_status(
+                            vin, enriched
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        _LOGGER.debug(
+                            "channel-status compute skipped (%s)",
+                            type(exc).__name__,
+                        )
                     refreshed.append((vin, enriched))
 
             with self._vehicles_lock:
@@ -7477,8 +7589,8 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         if fresh == (self.entry.data.get(CONF_WEBSITE_COOKIES) or []):
             return
         try:
-            self.hass.config_entries.async_update_entry(
-                self.entry,
+            _self_update_entry(
+                self,
                 data={**self.entry.data, CONF_WEBSITE_COOKIES: fresh},
             )
             _LOGGER.debug(
@@ -7511,8 +7623,8 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         if until == current:
             return
         try:
-            self.hass.config_entries.async_update_entry(
-                self.entry,
+            _self_update_entry(
+                self,
                 data={**self.entry.data, CONF_COMPANION_RATE_LIMIT_UNTIL: until},
             )
         except Exception:  # noqa: BLE001
@@ -7579,8 +7691,8 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         if fresh == (self.entry.data.get(CONF_SUPPLEMENTARY_AUTHPROXY_COOKIES) or []):
             return
         try:
-            self.hass.config_entries.async_update_entry(
-                self.entry,
+            _self_update_entry(
+                self,
                 data={**self.entry.data, CONF_SUPPLEMENTARY_AUTHPROXY_COOKIES: fresh},
             )
             _LOGGER.debug(

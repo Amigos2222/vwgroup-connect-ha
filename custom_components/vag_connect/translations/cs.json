@@ -216,6 +216,7 @@
       "mbb_fallback_armed": "Záložní připojení je nastaveno. Pokud normální připojení vašeho Audi někdy přestane přijímat dálkové příkazy, zamykání/odemykání, klimatizace a nabíjení se automaticky přepnou na zálohu. V běžném provozu se nic nemění.",
       "no_devicegrant_audi": "Nebylo nalezeno žádné odpovídající Audi. Tato záloha platí jen pro Audi přidané přihlášením přes QR / aplikaci, které ji ještě nemá. Nejprve takto přidejte své Audi a pak se sem vraťte.",
       "porsche_login_wall": "Tvoje přihlašovací údaje jsou v pořádku — přihlášení prošlo krokem s heslem, ale zastavilo se na obrazovce captcha/souhlasu Porsche, kterou nelze dokončit automaticky (pozorováno na my.porsche.com). Jde o překážku na straně Porsche, sledovanou v #1337, ne o špatné heslo. Nezkoušej to opakovaně ve smyčce — opakované pokusy zablokovaly účty Porsche. Pokud můžeš, nahlas to prosím, ať to můžeme opravit (přilož diagnostiku): {report_url}",
+      "porsche_portal_step": "Porsche přesměroval toto přihlášení na svůj webový portál (my.porsche.com) kvůli jednorázovému kroku, který integrace nedokáže dokončit sama. Otevři {portal_url} v běžném prohlížeči — ideálně ve stejné síti jako Home Assistant — přihlas se stejným účtem, dokonči, co se zobrazí (souhlas, podmínky, upozornění na cookies), a poté se sem vrať a zkus to znovu. Nezkoušej to opakovaně ve smyčce: opakované neúspěšné pokusy zablokovaly účty Porsche. Stále nefunguje? Nahlas to zde: {report_url}",
       "porsche_captcha_failed": "Captcha se nepodařilo ověřit a je nyní neplatná. Zavři toto okno a spusť přihlášení Porsche znovu pro získání nové. Pokud můžeš, nahlas to prosím, ať to můžeme opravit (přilož diagnostiku): {report_url}",
       "porsche_captcha_cooldown": "Příliš mnoho pokusů o captcha. Opakované pokusy mohou vést k tomu, že Porsche účet dočasně zablokuje nebo označí tvou síť, proto bylo přihlašování zastaveno kvůli ochraně účtu. Než to zkusíš znovu, počkej několik minut. Pokud můžeš, nahlas to prosím, ať to můžeme opravit (přilož diagnostiku): {report_url}",
       "reconfigure_failed": "Změna konfigurace selhala: konfigurační záznam nebyl nalezen. Zkus to prosím znovu.",
@@ -1013,6 +1014,18 @@
       },
       "charging_plug1_lock_state": {
         "name": "Zámek konektoru nabíjení 1"
+      },
+      "flap_state": {
+        "name": "Klapka nádrže/nabíjení"
+      },
+      "flap_lock_state": {
+        "name": "Zámek klapky"
+      },
+      "flap_error_state": {
+        "name": "Chybový stav klapky"
+      },
+      "plug_lock_state": {
+        "name": "Zámek nabíjecí zástrčky"
       },
       "charging_plug2_connectionstate": {
         "name": "Připojení nabíjecího portu 2"

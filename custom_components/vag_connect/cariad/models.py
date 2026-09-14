@@ -1905,6 +1905,17 @@ class VehicleData:
     charging_plug1_flap_state: str | None = None
     charging_plug1_infrastructure_state: str | None = None
     charging_plug1_lock_state: str | None = None
+    # v4.7.10 (#1413, Audi e-tron GT hietaki) — single-charge-port cars emit the
+    # SAME states as BARE leaves (dict UUIDs a0736cf5 flap_state / 68a41ffa
+    # flap_lock_state / 42c4a3cf flap_error_state = cluster Vehicle Access;
+    # 44534a85 plug_lock_state = Charging) with no charging_plug1_/plug2_ prefix,
+    # so they surfaced as Scout "unexpected findings" every poll. Own targets, not
+    # folded into plug1 — the flap_* leaves live in Vehicle Access (a combustion
+    # tank flap has them too), and a two-port car sends both spellings.
+    flap_state: str | None = None
+    flap_lock_state: str | None = None
+    flap_error_state: str | None = None
+    plug_lock_state: str | None = None
     # Charging plug2 (second port — dual-port cars) connection / flap / lock /
     # infrastructure states. Mirror of plug1 but a SECOND port; kept separate,
     # NOT folded into plug_connected/plug_state.

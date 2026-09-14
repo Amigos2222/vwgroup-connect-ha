@@ -340,6 +340,30 @@ def _wall_screen(err_str: str) -> str:
     return err_str.partition(":")[2].partition("|")[0]
 
 
+# v4.7.10 — hassfest forbids literal URLs in translated strings; the
+# porsche_portal_step abort text refers to the portal via this placeholder.
+_PORSCHE_PORTAL_URL = "https://my.porsche.com"
+
+
+def _porsche_wall_reason(screen: str) -> str:
+    """v4.7.10 (#1400, #1337, #1414) — pick the abort reason from a wall's
+    ``<screen>`` string (``"<host>/<path-or-acul-screen>"``).
+
+    A NON-identity ``porsche.com`` host means Auth0 handed the login off to
+    Porsche's WEB portal (my.porsche.com) for a one-time interactive step the
+    integration cannot complete headless — distinct from the captcha/consent
+    ACUL screens on ``identity.porsche.com`` — so it gets its own abort text
+    (``porsche_portal_step``) telling the user to complete that step in a
+    browser rather than to just "try once more". identity screens (and the
+    ``?`` unknown-host fallback) keep the generic ``porsche_login_wall``."""
+    host = screen.partition("/")[0]
+    if host and host != "identity.porsche.com" and (
+        host == "porsche.com" or host.endswith(".porsche.com")
+    ):
+        return "porsche_portal_step"
+    return "porsche_login_wall"
+
+
 def _map_error(err_code: str) -> str:
     """Map ValueError string to strings.json error key."""
     # v4.7.8 — a ":detail" suffix (porsche_login_wall:<screen>|<marker>) rides
@@ -820,12 +844,17 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                     # #1337 — the login got past the password but hit a Porsche
                     # wall we can't clear headless. Stop cleanly and offer a
                     # one-click report that names which screen it was.
+                    # v4.7.10 (#1400) — a non-identity porsche.com host is the web
+                    # portal step, which needs different guidance than the ACUL
+                    # captcha/consent wall.
+                    screen = _wall_screen(err_str)
+                    reason = _porsche_wall_reason(screen)
                     return self.async_abort(
-                        reason="porsche_login_wall",
+                        reason=reason,
                         description_placeholders={
+                            "portal_url": _PORSCHE_PORTAL_URL,
                             "report_url": self._porsche_report_url(
-                                "email_password", "porsche_login_wall",
-                                _wall_screen(err_str),
+                                "email_password", reason, screen,
                             ),
                         },
                     )
@@ -2123,6 +2152,7 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
             return self.async_abort(
                 reason=reason,
                 description_placeholders={
+                    "portal_url": _PORSCHE_PORTAL_URL,
                     "report_url": self._porsche_report_url(
                         self._porsche_captcha_return or "porsche_captcha", reason,
                         screen,
@@ -2176,7 +2206,10 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                         # then hit the post-password captcha/consent wall.
                         # Re-showing the now-consumed captcha would just invite a
                         # lockout-risking retry, so stop cleanly + offer a report.
-                        return _abort_report("porsche_login_wall", _wall_screen(str(err)))
+                        # v4.7.10 (#1400) — a non-identity porsche.com host means
+                        # the web-portal step, which aborts with its own reason.
+                        screen = _wall_screen(str(err))
+                        return _abort_report(_porsche_wall_reason(screen), screen)
                     if mapped == "cannot_connect":
                         # Transient — the challenge may still be valid, so let the
                         # user retry rather than forcing a full restart.
@@ -2270,6 +2303,7 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 "captcha_img": self._porsche_captcha_img_html(
                     self._porsche_captcha_image
                 ),
+                "portal_url": _PORSCHE_PORTAL_URL,
                 "report_url": self._porsche_report_url(
                     self._porsche_captcha_return or "porsche_captcha",
                     "porsche_captcha",
@@ -2331,11 +2365,16 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 return await self.async_step_porsche_captcha()
             except ValueError as err:
                 if str(err).startswith("porsche_login_wall"):
+                    # v4.7.10 (#1400) — non-identity porsche.com host = web-portal
+                    # step with its own guidance; identity screens stay generic.
+                    screen = _wall_screen(str(err))
+                    reason = _porsche_wall_reason(screen)
                     return self.async_abort(
-                        reason="porsche_login_wall",
+                        reason=reason,
                         description_placeholders={
+                            "portal_url": _PORSCHE_PORTAL_URL,
                             "report_url": self._porsche_report_url(
-                                "reauth", "porsche_login_wall", _wall_screen(str(err)),
+                                "reauth", reason, screen,
                             ),
                         },
                     )
@@ -2513,12 +2552,16 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 return await self.async_step_porsche_captcha()
             except ValueError as err:
                 if str(err).startswith("porsche_login_wall"):
+                    # v4.7.10 (#1400) — non-identity porsche.com host = web-portal
+                    # step with its own guidance; identity screens stay generic.
+                    screen = _wall_screen(str(err))
+                    reason = _porsche_wall_reason(screen)
                     return self.async_abort(
-                        reason="porsche_login_wall",
+                        reason=reason,
                         description_placeholders={
+                            "portal_url": _PORSCHE_PORTAL_URL,
                             "report_url": self._porsche_report_url(
-                                "reconfigure", "porsche_login_wall",
-                                _wall_screen(str(err)),
+                                "reconfigure", reason, screen,
                             ),
                         },
                     )

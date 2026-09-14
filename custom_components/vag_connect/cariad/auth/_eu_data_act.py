@@ -544,11 +544,22 @@ def classify_portal_login_failure(
         str(page_type)[:80], str(err_code)[:80], _safe_url(landing_url),
     )
 
+    # v4.7.10 (#1417, also mps222 in #1337) — a generalErrorBranded /
+    # browserFeaturesMissingError 400 that happens to LAND ON the T&C (or
+    # marketing-consent) URL is an IDP block/error page, NOT a pending
+    # terms/marketing interstitial: the URL substring is in the blob but the
+    # pageType says the IDP errored out before rendering the real interstitial.
+    # The _TC_MARKERS check ran first and mis-classified it as
+    # terms_and_conditions, so the UI told the user to accept terms that are not
+    # pending. Skip the URL-substring marker buckets for these error pageTypes
+    # and let the _NONCRED_ERROR_PAGETYPES branch below surface the honest error.
+    _noncred_error_page = str(page_type).lower() in _NONCRED_ERROR_PAGETYPES
+
     # 1. Interstitials we recognise — reuse the main-chain exceptions.
-    if any(m in blob for m in _TC_MARKERS):
+    if not _noncred_error_page and any(m in blob for m in _TC_MARKERS):
         log_ctx.setdefault("classified", "terms_and_conditions")
         return TermsAndConditionsError(), log_ctx
-    if any(m in blob for m in _CONSENT_MARKERS):
+    if not _noncred_error_page and any(m in blob for m in _CONSENT_MARKERS):
         log_ctx.setdefault("classified", "marketing_consent")
         return MarketingConsentError(), log_ctx
     # Email-OTP must be checked BEFORE the generic 2FA family (subclass).
@@ -2843,6 +2854,27 @@ def map_dataset_to_vehicle_data(
     if _p2l is not None and d.charging_plug2_lock_state is None:
         d.charging_plug2_lock_state = _p2l
 
+    # v4.7.10 (#1413, Audi e-tron GT hietaki) — single-charge-port cars ship the
+    # flap/plug states as BARE leaves (no charging_plug1_/plug2_ prefix): dict
+    # UUIDs a0736cf5 flap_state, 68a41ffa flap_lock_state, 42c4a3cf
+    # flap_error_state (all cluster Vehicle Access), 44534a85 plug_lock_state
+    # (Charging). Only the prefixed variants were wired above, so these
+    # re-reported to the Scout every poll. Map to their OWN targets, never
+    # folding into plug1 (a two-port car sends both; the flap_* leaves also exist
+    # on combustion tank-flap cars). Guarded on None so a prefixed reading wins.
+    _fs = _charge_str("flap_state")
+    if _fs is not None and d.flap_state is None:
+        d.flap_state = _fs
+    _fls = _charge_str("flap_lock_state")
+    if _fls is not None and d.flap_lock_state is None:
+        d.flap_lock_state = _fls
+    _fes = _charge_str("flap_error_state")
+    if _fes is not None and d.flap_error_state is None:
+        d.flap_error_state = _fes
+    _pls = _charge_str("plug_lock_state")
+    if _pls is not None and d.plug_lock_state is None:
+        d.plug_lock_state = _pls
+
     # parking_light_left / _right → aggregate parking_light + per-side fields.
     _pll = first("parking_light_left")
     _plr = first("parking_light_right")
@@ -4032,21 +4064,36 @@ class EUDataActConnector:
         terms form appears twice"). The wrong-CLIENT T&C artefact (#1340) is already
         eliminated at the source by the per-brand portal client_ids, so this only
         ever clears a real, account-level T&C update.
+
+        v4.7.10 (#1417, also mps222 in #1337) — the T&C accept was still POSTing
+        with the OLD consent-grant shape that v2.15.7 already root-caused and
+        fixed for ``_accept_consent_page``: dict-based ``_login_fields`` (which
+        also injects a templateModel ``hmac`` BODY field the signin-service form
+        never has) + ``_resolve_action`` which ``split('?', 1)[0]`` strips the
+        query on an EMPTY action → the IDP answers HTTP 400 generalErrorBranded
+        at ``.../terms-and-conditions`` (exactly the reporter's log). The T&C
+        interstitial is the SAME empty-action form as the consent grant, so we
+        mirror it: ordered ``(name, value)`` pairs via ``_consent_form_fields``
+        (no injected hmac body field) and, on an empty action, POST back to the
+        FULL ``terms_url`` with its query (hmac/relayState/callback) intact.
         """
-        fields, action = _login_fields(terms_html)
+        pairs, action = _consent_form_fields(terms_html)
         # Gate on the form's own anti-CSRF / continuation fields — without them
         # this is not an acceptable T&C form and a POST would just 400.
-        if not ({"_csrf", "hmac", "relayState"} & set(fields)):
+        names = {n for n, _ in pairs}
+        if not ({"_csrf", "hmac", "relayState"} & names):
             _LOGGER.debug(
                 "EU Data Act portal: T&C page at %s carried no form fields — "
                 "cannot auto-accept, leaving to classifier",
                 _safe_url(terms_url),
             )
             return None
-        accept_action = _resolve_action(terms_url, action)
+        # Empty action ⇒ POST to the FULL terms URL incl. query. Do NOT use
+        # _resolve_action (it strips the query → 400 generalErrorBranded).
+        accept_action = urljoin(terms_url, action) if action else terms_url
         try:
             async with self._session.post(
-                accept_action, data=fields,
+                accept_action, data=pairs,
                 headers={"User-Agent": _USER_AGENT, "Referer": terms_url},
                 allow_redirects=True, timeout=ClientTimeout(total=_TIMEOUT_S),
             ) as resp:

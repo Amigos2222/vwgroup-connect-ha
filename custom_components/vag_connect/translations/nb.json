@@ -216,6 +216,7 @@
       "mbb_fallback_armed": "Reserveforbindelsen er satt opp. Hvis den vanlige forbindelsen til Audi-en din en gang slutter å ta imot fjernkommandoer, bytter lås/lås opp, klima og lading automatisk over til reserven. Ingenting endres til daglig.",
       "no_devicegrant_audi": "Fant ingen passende Audi. Denne reserven gjelder bare en Audi du la til med QR-/app-pålogging og som ikke allerede har den. Legg til Audi-en din på den måten først, og kom deretter tilbake hit.",
       "porsche_login_wall": "Påloggingsdetaljene dine er i orden — innloggingen kom forbi passordtrinnet, men stoppet ved en Porsche captcha-/samtykkeskjerm som den ikke kan fullføre automatisk (sett på my.porsche.com). Dette er en sperre på Porsches side, spores i #1337, ikke feil passord. Ikke prøv igjen i en løkke — gjentatte forsøk har låst Porsche-kontoer. Hvis du kan, rapporter det gjerne så vi kan fikse det (legg ved diagnostikk): {report_url}",
+      "porsche_portal_step": "Porsche sendte denne innloggingen til nettportalen sin (my.porsche.com) for et engangstrinn som integrasjonen ikke kan fullføre selv. Åpne {portal_url} i en vanlig nettleser — helst på samme nettverk som Home Assistant — logg inn med den samme kontoen, fullfør det den viser (samtykke, vilkår, informasjonskapsel-varsel), og kom så tilbake og prøv igjen. Ikke prøv igjen i en løkke: gjentatte mislykkede forsøk har låst Porsche-kontoer. Sitter du fortsatt fast? Rapporter det her: {report_url}",
       "porsche_captcha_failed": "Captchaen kunne ikke bekreftes og er nå brukt opp. Lukk denne dialogen og start Porsche-innloggingen på nytt for å få en ny. Hvis du kan, rapporter det gjerne så vi kan fikse det (legg ved diagnostikk): {report_url}",
       "porsche_captcha_cooldown": "For mange captcha-forsøk. Gjentatte forsøk kan føre til at Porsche midlertidig låser kontoen eller flagger nettverket ditt, så dette ble stoppet for å beskytte kontoen din. Vent noen minutter før du prøver igjen. Hvis du kan, rapporter det gjerne så vi kan fikse det (legg ved diagnostikk): {report_url}",
       "reconfigure_failed": "Rekonfigurering mislyktes: konfigurasjonsoppføringen ble ikke funnet. Prøv igjen.",
@@ -1013,6 +1014,18 @@
       },
       "charging_plug1_lock_state": {
         "name": "Ladeport 1, kontaktlås"
+      },
+      "flap_state": {
+        "name": "Lade-/tanklokk"
+      },
+      "flap_lock_state": {
+        "name": "Lokklås"
+      },
+      "flap_error_state": {
+        "name": "Feilstatus for lokk"
+      },
+      "plug_lock_state": {
+        "name": "Ladepluggslås"
       },
       "charging_plug2_connectionstate": {
         "name": "Ladeport 2, tilkobling"

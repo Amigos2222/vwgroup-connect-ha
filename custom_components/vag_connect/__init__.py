@@ -29,7 +29,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, CONF_BRAND, CONF_USERNAME, CONF_PASSWORD
-from .coordinator import VagConnectCoordinator
+from .coordinator import VagConnectCoordinator, entry_settings_fingerprint
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1092,6 +1092,27 @@ async def _async_update_listener(
     (those require a new authenticated API client).
     """
     coordinator: VagConnectCoordinator | None = getattr(entry, "runtime_data", None)
+
+    # v4.7.10 (#465, toglo) — ignore our OWN entry writes. The coordinator
+    # persists rotated vw.de/MBB cookies+tokens (and other bookkeeping) back into
+    # the entry on nearly every poll via ``_self_update_entry``; treating each of
+    # those as a user settings change fired ``async_request_refresh``, which drove
+    # the next persist -> a self-sustaining ~10-16 s refresh loop that pounded
+    # identity.vwgroup.io and flip-flopped the per-source sensors. When the live
+    # entry still matches the fingerprint the coordinator recorded for its last
+    # write, this update carried no user change: skip the refresh (and the
+    # soft-update) entirely. A genuine options save (scan interval, S-PIN, cohort
+    # toggle) yields a different fingerprint and falls through to reload/soft-apply
+    # exactly as before.
+    self_fp = getattr(coordinator, "_self_entry_write_fp", None)
+    if self_fp is not None and self_fp == entry_settings_fingerprint(
+        entry.data, entry.options
+    ):
+        _LOGGER.debug(
+            "VW Group Connect: entry update was our own persistence write "
+            "(no settings change) — skipping refresh"
+        )
+        return
 
     # Fields that require a full reload (new auth client needed)
     _RELOAD_KEYS = {CONF_BRAND, CONF_USERNAME, CONF_PASSWORD}

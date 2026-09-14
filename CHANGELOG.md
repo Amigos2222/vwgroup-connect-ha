@@ -42,6 +42,41 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+## [4.7.10] - 2026-09-14 — Portal logins that actually complete, and a refresh loop that hammered vw.de
+
+### Fixed
+- **Audi/VW Group portal login no longer dies on the Terms & Conditions step with an "accept in the app"
+  message when nothing is pending.** The T&C auto-accept posted the form without the page's own query
+  parameters, which the sign-in service rejects with a branded error page — the same mistake the consent
+  step had been cured of earlier this year. The accept now posts exactly like the consent step does, and a
+  sign-in-service error page is reported as what it is instead of being blamed on unaccepted terms
+  (#1417, thanks @jens762001-cpu).
+- **A supplementary vw.de channel with a dead web session no longer drags the integration into a refresh
+  loop.** Every re-login attempt rotated the stored cookies, storing them counted as a settings change, and a
+  settings change triggered another refresh — one full cycle every ~10 s, hammering VW's identity server
+  and flipping the source sensors. The integration's own bookkeeping writes no longer count as settings
+  changes, the vw.de re-login is attempted once per cycle, and manual refreshes compute the channel status
+  the same way scheduled polls do (#465, thanks @toglo for the debug log).
+- **CUPRA/SEAT: when VW's attestation wall blocks every per-car read while the garage still answers, the
+  read-only EU Data Act portal is armed automatically.** Until now that only happened when the garage call
+  itself was blocked; the per-car case left the entry stuck with empty readings, no fallback and a
+  re-authentication that changed nothing (#465, thanks @anju1337 for the smoking-gun log).
+- **"Vehicle data not updated for N hours" no longer fires on cars whose live channel is vw.de.** The
+  warning measured the age of the EU Data Act portal snapshot only; the vw.de channel now stamps its own
+  capture time and the freshest capture across channels counts (#1419, thanks @Ra72xx).
+- **Porsche: a login that Porsche hands over to its web portal is explained, not just declared a wall.**
+  The message now says what to do (sign in once at my.porsche.com in a normal browser, complete what it
+  shows, retry) and the report link carries the exact portal path (#1400, #1337, #1414).
+- **EU Data Act request creation: the portal's actual reason is logged when it refuses a request.** Only the
+  length of the reply was logged, and the wording claimed a rejected duration it could not know (#1412,
+  thanks @chrisbamtam).
+
+### Added
+- **Scout feed: single-port charge/fuel flap fields.** `flap_state`, `flap_lock_state`, `flap_error_state`
+  and `plug_lock_state` now feed sensors (the dual-port variants already did) (#1413, thanks @hietaki).
+- **Test cohort: a third MBB probe target** (operation list on the EU-DP host) and a 404 class marker, so
+  the #584 answer can distinguish a missing route from a gateway "not found" (thanks @Testius007).
+
 ## [4.7.9] - 2026-09-11 — The test cohort finally reaches the MBB command connector
 
 ### Fixed
