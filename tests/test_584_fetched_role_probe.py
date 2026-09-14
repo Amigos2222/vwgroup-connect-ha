@@ -110,21 +110,56 @@ def _probe_client(session: _FakeSession) -> VWEUClient:
 
 def test_probe_records_leapfrog_win_200_on_eudp() -> None:
     """200 with a role payload on the modern host where v3 401s = the signal."""
-    sess = _FakeSession([(200, '{"role":"PRIMARY_USER"}'), (404, "")])
+    sess = _FakeSession([(200, '{"role":"PRIMARY_USER"}'), (404, ""), (401, "")])
     c = _probe_client(sess)
     asyncio.run(c._probe_fetched_role_cohort(VIN))
     assert c.probe_outcomes["fetched_role:eudp:VW/DE"] == "200 role"
     assert c.probe_outcomes["fetched_role:ece:VW/DE"] == "404"
-    # read-only: both requests were GETs, VIN never leaks into the outcome keys
+    # read-only: all requests were GETs, VIN never leaks into the outcome keys
     assert all("vehicles" in u for u in sess.calls)
     assert all(VIN not in k for k in c.probe_outcomes)
 
 
 def test_probe_records_404_not_found() -> None:
-    sess = _FakeSession([(404, ""), (404, "")])
+    sess = _FakeSession([(404, ""), (404, ""), (404, "")])
     c = _probe_client(sess)
     asyncio.run(c._probe_fetched_role_cohort(VIN))
     assert c.probe_outcomes["fetched_role:eudp:VW/DE"] == "404"
+
+
+# ── v4.7.10 (#584/#923): third target + 404 body-class suffix ────────────────
+def test_probe_records_operationlist_v3_third_target() -> None:
+    """The EU-DP operationlist/v3 host is probed as a third data point, with a
+    VIN-only URL but a seg/country-scoped diagnostics key."""
+    sess = _FakeSession([(404, ""), (404, ""), (401, "")])
+    c = _probe_client(sess)
+    asyncio.run(c._probe_fetched_role_cohort(VIN))
+    assert c.probe_outcomes["operationlist_v3:eudp:VW/DE"] == "401"
+    # three distinct hosts/routes were hit, one of them the operationlist route
+    assert len(sess.calls) == 3
+    assert any(
+        "mal-3a.prd.eu.dp" in u and "/operationlist/v3/vehicles/" in u
+        for u in sess.calls
+    )
+    assert all(VIN not in k for k in c.probe_outcomes)
+
+
+def test_probe_404_gateway_class_vs_plain() -> None:
+    """A 404 records a body CLASS suffix: a Cariad wrapper-404 → '404 gateway',
+    a plain rolesrights 404 → '404'. The body itself is never stored."""
+    wrapper = (
+        '{"error":{"message":"Not Found","info":"Upstream service responded '
+        'with an unexpected status","code":4112,"retry":true}}'
+    )
+    sess = _FakeSession([(404, wrapper), (404, "plain not found"), (404, "")])
+    c = _probe_client(sess)
+    asyncio.run(c._probe_fetched_role_cohort(VIN))
+    assert c.probe_outcomes["fetched_role:eudp:VW/DE"] == "404 gateway"
+    assert c.probe_outcomes["fetched_role:ece:VW/DE"] == "404"
+    assert c.probe_outcomes["operationlist_v3:eudp:VW/DE"] == "404"
+    # the body text never leaks into any recorded outcome
+    assert all("Upstream" not in v and "not found" not in v.lower()
+               for v in c.probe_outcomes.values())
 
 
 def test_probe_is_failsoft_on_network_error() -> None:
@@ -140,9 +175,9 @@ def test_probe_is_failsoft_on_network_error() -> None:
 
 
 def test_probe_is_one_shot_per_vin() -> None:
-    sess = _FakeSession([(200, '{"role":"x"}'), (404, ""),
-                         (200, '{"role":"x"}'), (404, "")])
+    sess = _FakeSession([(200, '{"role":"x"}'), (404, ""), (401, ""),
+                         (200, '{"role":"x"}'), (404, ""), (401, "")])
     c = _probe_client(sess)
     asyncio.run(c._probe_fetched_role_cohort(VIN))
     asyncio.run(c._probe_fetched_role_cohort(VIN))  # second call is a no-op
-    assert len(sess.calls) == 2  # only the first pass issued requests
+    assert len(sess.calls) == 3  # only the first pass issued requests (3 targets)

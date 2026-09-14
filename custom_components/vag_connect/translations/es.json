@@ -216,6 +216,7 @@
       "mbb_fallback_armed": "Conexión de reserva configurada. Si la conexión normal de tu Audi deja alguna vez de aceptar comandos remotos, el bloqueo/desbloqueo, la climatización y la carga pasan a la de reserva automáticamente. En el día a día no cambia nada.",
       "no_devicegrant_audi": "No se encontró ningún Audi compatible. Esta reserva solo se aplica a un Audi que hayas añadido con el inicio de sesión por QR / app y que aún no la tenga. Añade primero tu Audi de esa forma y luego vuelve aquí.",
       "porsche_login_wall": "Tus credenciales son correctas — el inicio de sesión superó el paso de la contraseña, pero se detuvo en una pantalla de captcha/consentimiento de Porsche que no puede completar automáticamente (vista en my.porsche.com). Es un bloqueo del lado de Porsche, registrado en #1337, no una contraseña incorrecta. No lo reintentes en bucle — los intentos repetidos han bloqueado cuentas de Porsche. Si puedes, notifícalo para que podamos solucionarlo (adjunta los diagnósticos): {report_url}",
+      "porsche_portal_step": "Porsche envió este inicio de sesión a su portal web (my.porsche.com) para un paso único que la integración no puede completar por sí sola. Abre https://my.porsche.com en un navegador normal — idealmente en la misma red que Home Assistant — inicia sesión con la misma cuenta, completa lo que muestre (consentimiento, términos, aviso de cookies) y luego vuelve e inténtalo de nuevo. No lo reintentes en bucle: los intentos fallidos repetidos han bloqueado cuentas de Porsche. ¿Sigues atascado? Notifícalo aquí: {report_url}",
       "porsche_captcha_failed": "No se pudo verificar el captcha y ya está caducado. Cierra este diálogo y vuelve a iniciar el acceso de Porsche para obtener uno nuevo. Si puedes, notifícalo para que podamos solucionarlo (adjunta los diagnósticos): {report_url}",
       "porsche_captcha_cooldown": "Demasiados intentos de captcha. Los intentos repetidos pueden hacer que Porsche bloquee temporalmente la cuenta o marque tu red, por lo que se detuvo para proteger tu cuenta. Espera unos minutos antes de volver a intentarlo. Si puedes, notifícalo para que podamos solucionarlo (adjunta los diagnósticos): {report_url}",
       "reconfigure_failed": "Error al reconfigurar: no se encontró la entrada de configuración. Inténtalo de nuevo.",
@@ -1013,6 +1014,18 @@
       },
       "charging_plug1_lock_state": {
         "name": "Bloqueo conector de carga 1"
+      },
+      "flap_state": {
+        "name": "Tapa de carga/combustible"
+      },
+      "flap_lock_state": {
+        "name": "Bloqueo de la tapa"
+      },
+      "flap_error_state": {
+        "name": "Estado de error de la tapa"
+      },
+      "plug_lock_state": {
+        "name": "Bloqueo del conector de carga"
       },
       "charging_plug2_connectionstate": {
         "name": "Conexión toma de carga 2"

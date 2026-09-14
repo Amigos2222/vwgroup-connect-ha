@@ -44,6 +44,7 @@ import logging
 import re
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlparse
 
@@ -215,6 +216,37 @@ def _kelvin_to_celsius(raw: Any) -> float | None:
     return round(k - 273.15, 1) if k is not None else None
 
 
+def _parse_captured_ts(raw: Any) -> datetime | None:
+    """Parse a ``carCapturedTimestamp`` (ISO string or datetime) to a tz-aware
+    UTC datetime, or None. Tolerant: unparseable / empty / wrong-type → None."""
+    if isinstance(raw, datetime):
+        return raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
+    if isinstance(raw, str) and raw:
+        try:
+            ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+    return None
+
+
+def _bump_last_seen(d: VehicleData, raw: Any) -> None:
+    """v4.7.10 (#1419 Ra72xx) — advance ``d.last_seen_at`` to the freshest
+    ``carCapturedTimestamp`` the vw.de mappers see. The stale_data Repair +
+    data_stale binary anchor solely on ``last_seen_at``, which this LIVE channel
+    never set → on a portal-supplemented VW EU car the only ``last_seen_at`` was
+    the EU Data Act snapshot's frozen capture time (98 h), so the car was flagged
+    "not updated in 98 h" every day even while vw.de delivered live readings.
+    Advance-only across the payloads (charging blocks, maintenance, position);
+    the raw ISO string is stored (``_capture_age_s`` already parses both types)."""
+    new = _parse_captured_ts(raw)
+    if new is None:
+        return
+    cur = _parse_captured_ts(d.last_seen_at)
+    if cur is None or new > cur:
+        d.last_seen_at = raw
+
+
 def map_charging_to_vehicle_data(payload: Any, d: VehicleData) -> VehicleData:
     """Map a ``charging/status`` response onto ``VehicleData``.
 
@@ -309,6 +341,13 @@ def map_charging_to_vehicle_data(payload: Any, d: VehicleData) -> VehicleData:
     if isinstance(ext, str) and ext:
         d.external_power = ext.lower() not in ("unavailable", "off", "")
 
+    # v4.7.10 (#1419) — anchor last_seen_at to the freshest capture the charging
+    # body carries. Each status block stamps its own carCapturedTimestamp (BFF
+    # shape, verified against the fixtures); take the newest across all of them so
+    # the live vw.de read owns the freshness anchor instead of the stale portal.
+    for _blk in (battery, charging, plug, data):
+        _bump_last_seen(d, _blk.get("carCapturedTimestamp"))
+
     return d
 
 
@@ -359,6 +398,11 @@ def map_maintenance_to_vehicle_data(payload: Any, d: VehicleData) -> VehicleData
     if isinstance(ts, str) and ts:
         d.maintenance_report_captured_at = ts
 
+    # v4.7.10 (#1419) — same freshness anchor as the charging mapper. Keep the
+    # dedicated maintenance_report_captured_at untouched; last_seen_at is the
+    # cross-payload newest the stale_data Repair reads.
+    _bump_last_seen(d, ts)
+
     return d
 
 
@@ -408,6 +452,16 @@ class WebsiteAuthProxyConnector:
         # so 0.0 would wrongly debounce the very first roll — CI caught this on a
         # fresh runner where the tests passed on a long-uptime dev box.)
         self._last_roll: float = float("-inf")
+        # v4.7.10 (#465, toglo) — sticky "the silent resume already proved this
+        # SSO dead" flag. Set when a PROACTIVE roll (maybe_roll) hits a dead SSO,
+        # reset only when a fresh proactive roll actually runs or a login/resume
+        # succeeds. It stops the per-VIN REACTIVE refresh() from firing a SECOND
+        # identical prompt=none GET at identity.vwgroup.io in the same cycle after
+        # the proactive one already failed — one silent-resume attempt per cycle,
+        # not one per VIN plus the roll. The "SSO dead -> re-login" verdict is
+        # still raised (cheaply, without the extra GET), so the Repair flow is
+        # unchanged.
+        self._resume_dead_this_cycle: bool = False
         # Per-VIN platform backend ("MBB"/"MEB"/…) learned from the relations
         # parse, so the live-status reads pick the right ``gdc`` — an MBB car
         # uses a different global-data-centre than a WeConnect car, and the
@@ -799,6 +853,16 @@ class WebsiteAuthProxyConnector:
         ``begin_login`` flow; a surfaced OTP requirement raises so the caller
         can route the user back through the OTP UI.
         """
+        # v4.7.10 (#465, toglo) — one silent-resume attempt per cycle. If the
+        # PROACTIVE roll (maybe_roll) already declared this SSO dead this cycle,
+        # the per-VIN reactive refresh() must NOT fire a second identical
+        # prompt=none GET at the IDP — re-raise the same verdict cheaply. The flag
+        # is cleared whenever a fresh proactive roll runs or a resume/login
+        # succeeds, so a recovered SSO is picked up again.
+        if self._resume_dead_this_cycle:
+            raise AuthenticationError(
+                "Website authproxy: SSO session expired — full re-login required"
+            )
         # The silent resume issues the IDENTICAL request begin_login does, so it
         # needs the identical redirect budget. It used to run at aiohttp's
         # default of 10 hops while begin_login was deliberately given 20, and
@@ -878,6 +942,9 @@ class WebsiteAuthProxyConnector:
             )
         if status < 400 and on_portal and "/u/login" not in landed_path:
             self.logged_in = True
+            # v4.7.10 (#465) — a live resume clears the per-cycle "SSO dead" latch
+            # so the reactive path works again the moment the session recovers.
+            self._resume_dead_this_cycle = False
             _LOGGER.info(
                 "Website authproxy: silent refresh resumed the session"
                 " (prompt=none, no OTP)"
@@ -905,14 +972,31 @@ class WebsiteAuthProxyConnector:
         if not force and (now - self._last_roll) < _PROACTIVE_ROLL_INTERVAL_S:
             return
         self._last_roll = now
+        # v4.7.10 (#465, toglo) — a fresh proactive roll opens a new cycle: clear
+        # the latch BEFORE the GET so the reactive refresh() is allowed again
+        # unless THIS roll proves the SSO dead below. (On debounced cycles we
+        # return above without touching the latch, so a prior dead verdict stays
+        # sticky and the reactive path stays suppressed until the next real roll.)
+        self._resume_dead_this_cycle = False
         try:
             await self.refresh()
+        except AuthenticationError as exc:
+            # A dead SSO on the proactive roll. Latch it so the per-VIN reactive
+            # refresh() this cycle re-raises the verdict WITHOUT a second GET,
+            # instead of hammering the IDP again. Still swallowed here — the roll
+            # is opportunistic and must never break the poll.
+            self._resume_dead_this_cycle = True
+            _LOGGER.debug(
+                "Website authproxy: proactive session roll found a dead SSO "
+                "(%s); reactive refresh this cycle will re-use the verdict",
+                type(exc).__name__,
+            )
         except Exception as exc:  # noqa: BLE001
-            # A proactive roll is opportunistic: if it fails (transient network,
-            # or a genuinely-dead SSO), swallow it and let the subsequent read's
-            # reactive refresh()/re-login handle it. Never propagate from here.
-            # Log the exception CLASS only, never exc_info — a chained aiohttp
-            # error's str() carries the VIN-path read URL (PII).
+            # A proactive roll is opportunistic: if it fails (transient network),
+            # swallow it and let the subsequent read's reactive refresh()/re-login
+            # handle it. Never propagate from here. Log the exception CLASS only,
+            # never exc_info — a chained aiohttp error's str() carries the
+            # VIN-path read URL (PII).
             _LOGGER.debug(
                 "Website authproxy: proactive session roll skipped (%s; will rely"
                 " on the reactive path this cycle)",
@@ -924,6 +1008,9 @@ class WebsiteAuthProxyConnector:
         host = urlparse(_SITE_BASE).netloc
         if urlparse(landed_url).netloc == host:
             self.logged_in = True
+            # v4.7.10 (#465) — a full re-login clears the per-cycle "SSO dead"
+            # latch so the reactive silent resume works again next cycle.
+            self._resume_dead_this_cycle = False
             _LOGGER.info(
                 "Website authproxy: login succeeded (read-only, beta)"
             )
@@ -1823,6 +1910,9 @@ class WebsiteAuthProxyConnector:
                     d.latitude, d.longitude, _pos_ts = pos
                     if _pos_ts:
                         d.position_captured_at = _pos_ts
+                        # v4.7.10 (#1419) — position carCapturedTimestamp also
+                        # feeds the last_seen_at freshness anchor (advance-only).
+                        _bump_last_seen(d, _pos_ts)
                     got_data = True
                     self._position_available = True
             except AuthenticationError:

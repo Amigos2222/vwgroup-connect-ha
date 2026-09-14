@@ -78,6 +78,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import re
 import time
 import uuid
 import zipfile
@@ -1212,37 +1213,50 @@ class DataActScraper:
                         )
                         return None
                     body_text = await resp.text(errors="replace")
+                    # v4.7.10 (#1412) — surface the actual reason. The redacted
+                    # body snippet + x-sky-isauth are what let us (and reporters)
+                    # tell an anonymous-AEM artefact from a real body rejection.
+                    # x-sky-isauth is the same header the AEM-revive GET already
+                    # reads; getattr keeps header-less test resps working. Named
+                    # reads only (x-sky-isauth, Content-Type) — no header dump.
+                    snippet = _redact_body_snippet(body_text, vin)
+                    hdrs = getattr(resp, "headers", {}) or {}
+                    is_auth = hdrs.get("x-sky-isauth", "absent")
+                    ctype = hdrs.get("Content-Type", "?")
                     if not last:
                         _LOGGER.info(
-                            "kickoff_custom_data_request: portal rejected "
-                            "Duration=%r (HTTP %s), retrying with %r "
-                            "(body %d bytes)",
+                            "kickoff_custom_data_request: attempt with "
+                            "Duration=%r → HTTP %s; trying %r next; "
+                            "x-sky-isauth=%s ct=%s; body (%d bytes): %s",
                             duration, resp.status, attempts[index + 1][0],
-                            len(body_text),
+                            is_auth, ctype, len(body_text), snippet,
                         )
                         continue
                     # b11 (#1273) — split severity by status. A 4xx is a genuine
                     # request rejection (e.g. a changed request format) → the car
                     # gets NO data feed, silently; keep it WARNING so the next
                     # portal-side format change doesn't go unnoticed for months.
-                    # A 5xx is usually the portal's one-active-request rule firing
-                    # when a request already exists but isn't readable back on an
-                    # anonymous-AEM session — not an actionable error, and it must
-                    # not cry "no data feed will start" on a live feed.
+                    # A 5xx is a portal-side error, so INFO not WARNING.
+                    # v4.7.10 (#1412) — state facts only: this branch performs NO
+                    # readback, so the old "a request likely already exists; a live
+                    # feed may still deliver" was an unverified guess. Log the
+                    # status, x-sky-isauth, content-type and the redacted body so
+                    # the real reason is diagnosable instead of asserted.
                     if 400 <= resp.status < 500:
                         _LOGGER.warning(
-                            "kickoff_custom_data_request HTTP %s for VIN %s — no "
-                            "data feed will start until this is resolved "
-                            "(body %d bytes)",
-                            resp.status, _mask_vin(vin), len(body_text),
+                            "kickoff_custom_data_request: Duration=%r → HTTP %s "
+                            "for VIN %s — no data feed will start until this is "
+                            "resolved; x-sky-isauth=%s ct=%s; body (%d bytes): %s",
+                            duration, resp.status, _mask_vin(vin), is_auth,
+                            ctype, len(body_text), snippet,
                         )
                     else:
                         _LOGGER.info(
-                            "kickoff_custom_data_request HTTP %s for VIN %s — a "
-                            "request likely already exists and isn't readable back "
-                            "on this portal session; a live feed may still "
-                            "deliver (body %d bytes)",
-                            resp.status, _mask_vin(vin), len(body_text),
+                            "kickoff_custom_data_request: Duration=%r → HTTP %s "
+                            "for VIN %s (server-side error; no readback done "
+                            "here); x-sky-isauth=%s ct=%s; body (%d bytes): %s",
+                            duration, resp.status, _mask_vin(vin), is_auth,
+                            ctype, len(body_text), snippet,
                         )
                     return None
             except DataActSessionExpiredError:
@@ -1359,6 +1373,43 @@ def _mask_vin(vin: str) -> str:
     if not vin:
         return "?"
     return f"...{vin[-6:]}" if len(vin) > 6 else vin
+
+
+# v4.7.10 (#1412 chrisbamtam) — the kickoff POST used to log only len(body_text)
+# on a non-2xx, so an Audi Q6 e-tron's rejection reason ("No Expiry"→400,
+# "One Month"→500) was invisible to the reporter and to us: we could not tell an
+# anonymous-AEM layer artefact (x-sky-isauth=0) apart from a genuine
+# Duration/body-shape rejection. These strip the parts of a portal error body
+# that could carry secrets before it reaches the log — a portal error page can
+# echo the account e-mail, the VIN-path request URL (query included) or a
+# bearer/trace value.
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w][\w.-]+")
+_URL_QUERY_RE = re.compile(r"(https?://[^\s\"'<>]+?)\?[^\s\"'<>]*")
+# A 20+ run of token-ish chars is trace/bearer/session material, not prose.
+_TOKENISH_RE = re.compile(r"[A-Za-z0-9._~+/=-]{20,}")
+_WS_RE = re.compile(r"\s+")
+
+
+def _redact_body_snippet(text: str, vin: str, *, cap: int = 300) -> str:
+    """Return a log-safe excerpt of a portal response body.
+
+    Collapses whitespace, masks the VIN to its last 6, then scrubs e-mails,
+    URL query strings and any token-like run, and finally caps the length so a
+    runaway HTML error page can never flood the log. Order matters: mask/scrub
+    before the cap so truncation can never split a secret and leave half of it
+    exposed.
+    """
+    if not text:
+        return ""
+    snippet = _WS_RE.sub(" ", text).strip()
+    if vin:
+        snippet = snippet.replace(vin, _mask_vin(vin))
+    snippet = _URL_QUERY_RE.sub(r"\1?<redacted>", snippet)
+    snippet = _EMAIL_RE.sub("<redacted-email>", snippet)
+    snippet = _TOKENISH_RE.sub("<redacted>", snippet)
+    if len(snippet) > cap:
+        snippet = snippet[:cap] + "..."
+    return snippet
 
 
 def _extract_download_urls(payload: Any) -> list[str]:

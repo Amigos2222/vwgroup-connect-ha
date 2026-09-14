@@ -116,6 +116,12 @@ class SeatCupraClient(CariadBaseClient):
         # issue when threshold is exceeded. Coordinator wires this to
         # ``repairs.raise_issue_ola_headers_outdated`` (added v2.4.1).
         self.ola_headers_repair_needed = False
+        # v4.7.10 (#465 anju1337, also #779 cohort) — one-shot latch so the
+        # runtime OLA-wall→EU-portal fallback in get_status arms AT MOST once
+        # per client lifetime. Without it a portal-login failure would re-arm
+        # (and re-log) on every poll; once _eu_portal is set the top-of-method
+        # portal branch takes over so this only guards the failed-arm loop.
+        self._ola_portal_fallback_tried = False
         # v2.4.1 — Scout Policy Compliance Audit T1: per-VIN caches
         # for license plate + nickname (from /v2/users/.../garage)
         # and parking-position map URLs (from /v1/vehicles/{vin}/
@@ -759,6 +765,54 @@ class SeatCupraClient(CariadBaseClient):
             trip_short_data,  # v2.11.2
             trip_cyclic_data,  # v2.11.2
         ) = results
+
+        # v4.7.10 (#465 anju1337, also the #779 attestation-wall cohort) —
+        # runtime OLA-wall → EU Data Act portal revive. get_vehicles arms the
+        # portal only when the GARAGE call 403s, but VW's device-attestation
+        # wall (#464) can 403 every PER-VIN endpoint while the garage still
+        # answers 200 — the login succeeds, the coordinator logs "Manual
+        # refresh OK", yet every telemetry field is None and the entry sits
+        # dead forever (reauth is a no-op: it re-validates the same OLA creds
+        # and reloads onto the same wall). Detect that here and mirror
+        # get_vehicles' fallback. Guards against a single transient 403
+        # flipping the car: we require EVERY substantive OLA endpoint to have
+        # failed with an APIError 403 AND the exhausted-fallback counter to be
+        # at/over the repair threshold (a lone transient 403 leaves the other
+        # substantive reads 200, which resets that counter to 0 in _request).
+        # ``substantive`` = the core per-VIN OLA telemetry reads only; the
+        # optional Group-B / charging-host endpoints soft-fail by design and
+        # must not gate the wall verdict.
+        if getattr(self, "_eu_portal", None) is None and not self._ola_portal_fallback_tried:
+            substantive = (
+                mycar, parking, ranges, status, charge_status, charge_info,
+                climate, maintenance, availability, mileage_v1,
+            )
+            wall = all(
+                isinstance(r, APIError) and getattr(r, "status", None) == 403
+                for r in substantive
+            )
+            if wall and self._ola_consecutive_403 >= _OLA_REPAIR_THRESHOLD:
+                # Arm at most once per lifetime (latch before the await so a
+                # login failure cannot loop), and log at WARNING once — mirror
+                # get_vehicles' 403-fallback message.
+                self._ola_portal_fallback_tried = True
+                _LOGGER.warning(
+                    "%s OLA per-VIN endpoints all blocked (403) despite a "
+                    "valid login and a live garage — arming the read-only EU "
+                    "Data Act portal fallback for status reads.",
+                    self._brand.name.upper(),
+                )
+                try:
+                    await self._arm_eu_portal()
+                except Exception:  # noqa: BLE001
+                    # Portal login failed — surface a no-data poll so the
+                    # coordinator keeps last-known-good visible and its revive /
+                    # runtime-kickoff machinery engages, instead of clobbering
+                    # good telemetry with the all-None snapshot below.
+                    d.no_data = True
+                    return d
+                portal_data: VehicleData = await self._eu_portal.get_vehicle_data(vin)
+                return portal_data
 
         # v1.9.0 — Vehicle Data Scout opt-in. Endpoint names match
         # ``EXPECTED_KEYS["cupra"]`` (SEAT inherits the same table).

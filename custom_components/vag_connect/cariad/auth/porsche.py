@@ -150,7 +150,7 @@ _AUDIENCE      = "https://api.porsche.com"
 # context is the more suspicious of the two to Auth0's bot scoring and is one
 # of only two request-shape differences from the flow that demonstrably gets
 # vehicle-holding accounts through. Honest, ours, not the other project's string.
-_USER_AGENT    = "vag-connect-ha/4.7.9 (+https://github.com/its-me-prash/vwgroup-connect-ha)"
+_USER_AGENT    = "vag-connect-ha/4.7.10 (+https://github.com/its-me-prash/vwgroup-connect-ha)"
 # Reference-client settle delay between the password POST and the first resume
 # hop (see the comment at the call site in ``authenticate``).
 _POST_PASSWORD_SETTLE_S = 2.5
@@ -629,19 +629,27 @@ class PorscheAuth:
                     )
                     return None
                 marker = self._page_marker(html)
+                hostname = urlsplit(target).hostname or "?"
+                # v4.7.10 (#1400, #1414) — a terminal 200 on a NON-identity
+                # porsche.com host is Porsche's WEB portal (my.porsche.com), not
+                # an Auth0 ACUL screen, so _acul_screen_name yields nothing and
+                # the old label was a useless "my.porsche.com/unknown". Record
+                # the URL PATH instead (path ONLY — the query carries state/iss/
+                # code) so the wall report names the actual portal step that
+                # Auth0 delegated to. identity.porsche.com screens keep host/
+                # screen. Still secret-free: host + path + title/keyword marker.
+                if hostname != _AUTH_SERVER and not screen:
+                    screen_label = urlsplit(target).path or "/"
+                    self._last_wall_screen = f"{hostname}{screen_label}"
+                else:
+                    screen_label = screen or "unknown"
+                    self._last_wall_screen = f"{hostname}/{screen_label}"
                 _LOGGER.debug(
                     "Porsche auth: hop returned HTTP %s — rendered screen '%s' "
                     "(host=%s; %s) we do not handle; no authorization code. The "
                     "screen name/marker is what grounding a fix for it needs.",
-                    resp.status, screen or "unknown",
-                    urlsplit(target).hostname or "?", marker,
+                    resp.status, screen_label, hostname, marker,
                 )
-                # v4.7.8 (#1337) — remember WHAT we hit so the wall error (and the
-                # config flow's abort text + one-click report) can name it. Every
-                # wall report so far said "screen: unknown" because this stayed
-                # DEBUG-only; secret-free by construction (host + screen name +
-                # title/keyword marker, never a URL/query/body).
-                self._last_wall_screen = f"{urlsplit(target).hostname or '?'}/{screen or 'unknown'}"
                 self._last_wall_marker = marker
                 return None
         return None

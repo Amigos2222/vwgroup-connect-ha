@@ -3159,6 +3159,42 @@ SENSOR_DESCRIPTIONS: tuple[VagSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
     ),
+    # v4.7.10 (#1413) — bare flap/plug leaves single-port cars ship without the
+    # charging_plug1_/plug2_ prefix. flap_* are Vehicle Access (a combustion tank
+    # flap has them) → UNCONDITIONAL; plug_lock_state is Charging → electric only.
+    VagSensorDescription(
+        key="flap_state",
+        translation_key="flap_state",
+        data_key="flap_state",
+        icon="mdi:fuel",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+    VagSensorDescription(
+        key="flap_lock_state",
+        translation_key="flap_lock_state",
+        data_key="flap_lock_state",
+        icon="mdi:lock",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+    VagSensorDescription(
+        key="flap_error_state",
+        translation_key="flap_error_state",
+        data_key="flap_error_state",
+        icon="mdi:alert-circle-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
+    VagSensorDescription(
+        key="plug_lock_state",
+        translation_key="plug_lock_state",
+        data_key="plug_lock_state",
+        icon="mdi:lock",
+        condition="electric",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
     VagSensorDescription(
         key="charging_plug2_connectionstate",
         translation_key="charging_plug2_connectionstate",
@@ -4006,6 +4042,12 @@ _DATA_PRESENT_REQUIRED: frozenset[str] = frozenset({
     "charging_plug2_flap_state",
     "charging_plug2_infrastructure_state",
     "charging_plug2_lock_state",
+    # v4.7.10 (#1413) — bare flap/plug leaves; single-port cars deliver these,
+    # other channels leave them None → no phantom diagnostic entity.
+    "flap_state",
+    "flap_lock_state",
+    "flap_error_state",
+    "plug_lock_state",
     "battery_available_kwh",
     "battery_cap_kwh",
     "trip_total_cost",

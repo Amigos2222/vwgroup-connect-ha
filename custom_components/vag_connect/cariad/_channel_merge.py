@@ -220,6 +220,45 @@ def merge_channels(
                 field_sources[f_name] = _best_nm
         contributors.add(_best_nm)
 
+    # v4.7.10 (#1419 Ra72xx) — last_seen_at: FRESHEST capture wins, not merge
+    # order. It anchors the stale_data Repair + data_stale binary, but was plain
+    # primary-first gap-fill and outside the live-supersede set. With the EU-DA
+    # portal contributing, its 15-min batch (here 98 h-frozen) snapshot would win
+    # over a live vw.de read via gap-fill → a false "not updated in 98 h" daily.
+    # Like position, capture AGE (not channel class) is the right judge: among
+    # every source that carries a parseable last_seen_at, the newest wins; a
+    # source without one can't win. Values are heterogeneous (datetime from the
+    # BFF/Škoda, ISO string from EU-DA/vw.de) — parse tolerant, skip unparseable.
+    def _ls_dt(vd: "VehicleData") -> datetime | None:
+        raw = getattr(vd, "last_seen_at", None)
+        if isinstance(raw, datetime):
+            return raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
+        if isinstance(raw, str) and raw:
+            try:
+                ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+        return None
+
+    _ls_nm: str | None = None
+    _ls_vd: VehicleData | None = None
+    _ls_ts: datetime | None = None
+    for nm, vd in sources:
+        ls_dt = _ls_dt(vd)
+        if ls_dt is None:
+            continue
+        if _ls_ts is None or ls_dt > _ls_ts:
+            _ls_nm, _ls_vd, _ls_ts = nm, vd, ls_dt
+    if (
+        _ls_nm is not None
+        and _ls_vd is not None
+        and field_sources.get("last_seen_at") != _ls_nm
+    ):
+        merged.last_seen_at = copy.deepcopy(_ls_vd.last_seen_at)
+        field_sources["last_seen_at"] = _ls_nm
+        contributors.add(_ls_nm)
+
     _merge_drivetrain(merged, sources)
 
     # Provenance = the channels that actually contributed a value: "+"-joined

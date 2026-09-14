@@ -174,3 +174,74 @@ def test_is_terms_landing_detects_only_terms() -> None:
         "https://identity.vwgroup.io/signin-service/v1/CLIENT/login/authenticate",
         _PASSWORD_HTML,
     ) is False
+
+
+# ── (e) #1417 — the accept POST shape (empty action → full URL + query) ───────
+# The T&C interstitial is the SAME empty-action form as the consent grant. The
+# accept must POST back to the FULL terms URL with the query (hmac/relayState/
+# callback) intact — the old code routed through _resolve_action which stripped
+# the query → HTTP 400 generalErrorBranded (mps222 in #1337). It must also send
+# ORDERED (name, value) pairs (not a dict) and must NOT inject a templateModel
+# hmac BODY field the signin-service form never carries.
+
+# EMPTY <form action> + hidden _csrf/relayState; templateModel carries hmac as a
+# QUERY-only value (never a body input) — mirrors the real consent fixture.
+_TERMS_EMPTY_ACTION_HTML = (
+    '<script>window._IDK = {templateModel: {"template":"termsAndConditions",'
+    '"hmac":"QUERY_HMAC_NOT_A_BODY_FIELD","relayState":"rs1"}, '
+    'csrf_token: "csrf_js"};</script>'
+    '<form action="">'
+    '<input type="hidden" name="_csrf" value="csrf_form">'
+    '<input type="hidden" name="relayState" value="rs1">'
+    '<button type="submit">Accept</button>'
+    '<button type="submit" name="cancel" value="true">Cancel</button>'
+    '</form>'
+)
+_TERMS_URL_WITH_QUERY = (
+    "https://identity.vwgroup.io/signin-service/v1/CLIENT/terms-and-conditions"
+    "?hmac=QUERY_HMAC_NOT_A_BODY_FIELD&relayState=rs1&callback=https%3A%2F%2Fcb"
+)
+
+
+class _CaptureSession:
+    """Records the URL + data of the T&C accept POST."""
+
+    def __init__(self) -> None:
+        self.post_url: str | None = None
+        self.post_data: Any = None
+
+    def post(self, url: str, **kw: Any) -> _FakeResp:
+        self.post_url = url
+        self.post_data = kw.get("data")
+        return _FakeResp(_PORTAL_OK_LANDING, status=200, text=_PORTAL_OK_HTML)
+
+
+@pytest.mark.asyncio
+async def test_accept_terms_posts_full_url_with_query_and_ordered_pairs() -> None:
+    session = _CaptureSession()
+    conn = EUDataActConnector(session)  # type: ignore[arg-type]
+    result = await conn._accept_terms_page(
+        _TERMS_URL_WITH_QUERY, _TERMS_EMPTY_ACTION_HTML
+    )
+
+    assert result is not None
+    landing, _html, status = result
+    assert landing == _PORTAL_OK_LANDING
+    assert status == 200
+
+    # Empty action → POST to the FULL terms URL WITH its query string intact.
+    assert session.post_url == _TERMS_URL_WITH_QUERY
+    assert "hmac=QUERY_HMAC_NOT_A_BODY_FIELD" in str(session.post_url)
+    assert "relayState=rs1" in str(session.post_url)
+
+    # Body is a LIST of ordered (name, value) pairs (not a dict).
+    body = session.post_data
+    assert isinstance(body, list)
+    body_names = {n for n, _ in body}
+    # No templateModel hmac injected into the BODY (hmac is the query param).
+    assert "hmac" not in body_names
+    # Buttons excluded — no 'cancel' leaks into the body.
+    assert "cancel" not in body_names
+    # The form's own anti-CSRF / continuation fields carried through.
+    assert ("_csrf", "csrf_form") in body
+    assert ("relayState", "rs1") in body

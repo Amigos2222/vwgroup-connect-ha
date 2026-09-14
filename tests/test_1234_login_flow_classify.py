@@ -17,6 +17,7 @@ from custom_components.vag_connect.cariad.auth._eu_data_act import (
 )
 from custom_components.vag_connect.cariad.exceptions import (
     PortalInteractionRequiredError,
+    TermsAndConditionsError,
 )
 
 _URL = "https://identity.vwgroup.io/signin-service/v1/CLIENT/login/authenticate"
@@ -55,3 +56,31 @@ def test_pagetype_reason_is_surfaced_and_secret_free():
     exc, ctx = classify_portal_login_failure(_URL, _html("browserFeaturesMissingError"))
     assert "browserFeaturesMissingError" in str(exc)
     assert {"email", "password", "relayState", "code"}.isdisjoint(ctx.keys())
+
+
+# #1417 (also mps222 in #1337) — a generalErrorBranded / browserFeaturesMissingError
+# 400 that LANDS ON the T&C URL is an IDP error, NOT a pending terms interstitial.
+# The _TC_MARKERS URL check used to fire first and mis-classify it as
+# terms_and_conditions, telling the user to accept terms that are not pending.
+_TERMS_URL = (
+    "https://identity.vwgroup.io/signin-service/v1/CLIENT/terms-and-conditions"
+)
+
+
+def test_idp_error_on_terms_url_is_not_terms_and_conditions():
+    # Both the URL substring (terms-and-conditions ∈ _TC_MARKERS) AND the error
+    # pageType are present; the error pageType must win → honest portal error.
+    for tpl in ("generalErrorBranded", "browserFeaturesMissingError"):
+        exc, ctx = classify_portal_login_failure(_TERMS_URL, _html(tpl))
+        assert isinstance(exc, PortalInteractionRequiredError), tpl
+        assert ctx["classified"] == "portal_interaction_required", tpl
+        assert ctx.get("classified") != "terms_and_conditions", tpl
+
+
+def test_real_terms_interstitial_still_classifies_as_terms():
+    # GUARD: a genuine T&C interstitial (pageType termsAndConditions, no IDP
+    # error) must STILL map to terms_and_conditions — the fix only skips the
+    # marker buckets for the _NONCRED_ERROR_PAGETYPES, nothing else.
+    exc, ctx = classify_portal_login_failure(_TERMS_URL, _html("termsAndConditions"))
+    assert isinstance(exc, TermsAndConditionsError)
+    assert ctx["classified"] == "terms_and_conditions"
