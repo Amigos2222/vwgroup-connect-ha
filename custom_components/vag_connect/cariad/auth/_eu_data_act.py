@@ -1585,7 +1585,40 @@ def map_dataset_to_vehicle_data(
     used: set[str] = set()
     syn = field_syn or {}
 
-    def first(*names: str) -> str | None:
+    def _record(attr: str | None, chosen: str | None, names: tuple[str, ...]) -> None:
+        """v4.7.11 (#465/#529/#1218 parity ADOPT) — stash the RESOLVED source
+        leaf's genuine capture time (and any unsettled tie) under the TARGET
+        VehicleData attribute, so an EU-DA sensor can expose per-value freshness.
+
+        Called from first()/first_freshest() with the leaf ACTUALLY chosen, so the
+        recorded ts always belongs to the value the mapper assigns — no duplicated
+        candidate lists, no drift if the alias order changes. ``field_ts`` holds
+        ONLY genuine per-point timestamps (the dataset floor is filtered out in
+        _walk_fields), so a recorded entry always means the sensor's freshness is
+        a real "point", never the ~15-min dataset floor. Ambiguity reuses the same
+        ``contested`` map the freshness resolver already built: a genuine, non-mode
+        -resolvable tie on the chosen leaf (or one of the call's aliases) is noted
+        so the reading's uncertainty is visible per entity. Opt-in per call site
+        (``record_as``) — the mapper has 200+ assignments and only the sensor-
+        facing ones need freshness; adding a site is a one-word kwarg."""
+        if not attr:
+            return
+        if chosen is not None:
+            ts = (field_ts or {}).get(chosen)
+            if ts is not None:
+                iso = _epoch_or_iso(str(ts))
+                if iso:
+                    d.field_captured_ts[attr] = iso
+        for cand in [c for c in (chosen, *names) if c]:
+            vals = (contested or {}).get(cand)
+            if vals and len(vals) > 1:
+                ordered = sorted(vals)
+                d.ambiguous_fields[attr] = (
+                    f"{len(ordered)} candidates disagree: {' vs '.join(ordered)}"
+                )
+                break
+
+    def first(*names: str, record_as: str | None = None) -> str | None:
         for n in names:
             if n in fields:
                 val = fields[n]
@@ -1634,10 +1667,11 @@ def map_dataset_to_vehicle_data(
                 for other in syn.get(n, frozenset()):
                     if other in fields:
                         used.add(other)
+                _record(record_as, n, names)
                 return val
         return None
 
-    def first_freshest(*names: str) -> str | None:
+    def first_freshest(*names: str, record_as: str | None = None) -> str | None:
         """Like ``first()``, but when the SAME datum is reported under multiple
         DIFFERENT-source aliases that disagree, pick the FRESHEST by capture
         time instead of the first in list order (#465, Arno-MA-73: portal SoC
@@ -1681,6 +1715,7 @@ def map_dataset_to_vehicle_data(
                 [(c[2], c[3], None if c[0] == float("-inf") else c[0]) for c in cands],
                 best[2], best[3],
             )
+        _record(record_as, best[2], names)
         return best[3]
 
     def freshest_by_value(*names: str) -> str | None:
@@ -1798,7 +1833,8 @@ def map_dataset_to_vehicle_data(
                         "ac1108b1-b8cc-3db9-a663-03d387e42223",
                         "0a18a053-b4b0-3db1-be44-a6c5dba629b1",
                         "f89ed652-d104-3fa6-b7e2-ab7543309e7b",
-                        "506cb83e-f99f-3af3-bbeb-0429b69a78d9"))
+                        "506cb83e-f99f-3af3-bbeb-0429b69a78d9",
+                        record_as="battery_soc"))
     # #1179-1183 — evaluate first_freshest() UNCONDITIONALLY so every SoC alias
     # present in the dataset is consumed into ``used`` (and thus leaves
     # raw_unmapped_fields / the Scout), even when the VALID-gated HV level below
@@ -1820,7 +1856,8 @@ def map_dataset_to_vehicle_data(
     odo = _to_int(first("mileage.value", "mileage", "odometer", "totalMileage",
                         # v2.29.x — UUID last-resort (openWB vweuda catalog).
                         "41c0805c-43e5-313e-9dfb-356cb8d20f7c",
-                        "30cc36fd-71ca-3c09-9296-e94ebd47bd2b"))
+                        "30cc36fd-71ca-3c09-9296-e94ebd47bd2b",
+                        record_as="odometer_km"))
     if odo is not None:
         # v3.0.2 (#1122) — _GLOBAL_SENTINELS drops the RAW uint32 sentinel here,
         # but not its 0.1-km-scaled form (429_496_729); the shared guard does.
@@ -2000,7 +2037,8 @@ def map_dataset_to_vehicle_data(
                         "estimatedcruisingrangeprimary.value",
                         "estimatedcruisingrangeprimary",
                         "153e8c40-4c6c-3c17-a11b-0ecc35d55b81",
-                        "0ca40e18-0564-3eda-bcc0-7aee9ef44f04"))
+                        "0ca40e18-0564-3eda-bcc0-7aee9ef44f04",
+                        record_as="range_km"))
     if rng is not None:
         d.range_km = rng
         if d.electric_range_km is None:
@@ -2060,12 +2098,13 @@ def map_dataset_to_vehicle_data(
     if ce is not None and ce >= 0:
         d.charge_session_energy_kwh = ce
 
-    tsoc = _to_int(first("settings.target_soc", "target_soc", "targetSOC_pct"))
+    tsoc = _to_int(first("settings.target_soc", "target_soc", "targetSOC_pct",
+                         record_as="target_soc"))
     if tsoc is not None:
         d.target_soc = tsoc
 
     cs = first("charging_state_report.current_charge_state", "current_charge_state",
-               "chargingState", "charging_state")
+               "chargingState", "charging_state", record_as="charging_state")
     if cs:
         # is_charging from the RAW value; store a shortened label for display
         # (a13/A4 — strips verbose VW enum prefixes). #764 — the portal one-time
@@ -2192,7 +2231,7 @@ def map_dataset_to_vehicle_data(
         )
 
     plug = first("charging_plug1_connectionstate", "plug_connection_state",
-                 "plugConnectionState", "plug_state")
+                 "plugConnectionState", "plug_state", record_as="plug_state")
     if plug is not None:
         d.plug_state = plug
         d.plug_connected = str(plug).lower() in ("connected", "plugged", "true", "1")
@@ -3254,26 +3293,36 @@ def map_dataset_to_vehicle_data(
     # locked_state 2=locked/3=unlocked block above; do NOT reuse those helpers).
     # NOTE (polarity): the 2=safe/3=unsafe mapping is documented in the dict only
     # for the three door safe_state_* fields (front_right / rear_left /
-    # rear_right). The bonnet + tailgate safe-state polarity is INFERRED from the
-    # same enum family (and from the locked_state block's bonnet entry); if a live
-    # payload shows otherwise these two should be re-verified.
+    # rear_right). The bonnet + tailgate dict entries document ONLY
+    # unsupported(0)/invalid(1)/unsafe(3) — no safe(2) — so a "3" on them is not a
+    # reliable unsafe signal (see the aggregate note below).
     _bonnet_lock = _to_int(first("locked_state_front_engine_bonnet"))
     if _bonnet_lock in (2, 3):
         d.bonnet_locked = _bonnet_lock == 2
-    # Rolled-up "all present closures safe" aggregate (2=safe). Only dict-confirmed
-    # safe_state_* fields (NO safe_state_front_left_door — it is absent from the
-    # spec; the documented set is front_right/rear_left/rear_right + bonnet/tailgate).
+    # v4.7.11 (grounded on mikrohard/hass-vw-eu-data-act #53, 2026-09-12): a live
+    # SEAT/CUPRA delivery showed safe_state_front_engine_bonnet=3 while the bonnet
+    # was CLOSED (open_state_front_engine_bonnet=3=closed in that same dataset).
+    # The dict documents no safe(2) for bonnet/tailgate, so folding their "3" into
+    # the roll-up flipped closures_secured to False on an actually-secured car.
+    # Drop both from the aggregate — keep ONLY the three dict-confirmed door
+    # safe_state_* fields (safe(2) documented). bonnet_locked above still comes
+    # from locked_state_front_engine_bonnet. (No safe_state_front_left_door — it
+    # is absent from the spec; the documented door set is front_right/rear_left/
+    # rear_right.)
     _safe_vals = [
         _to_int(first(_n)) for _n in (
-            "safe_state_front_engine_bonnet",
             "safe_state_front_right_door",
             "safe_state_rear_left_door", "safe_state_rear_right_door",
-            "safe_state_tailgate",
         )
     ]
     _safe_present = [v for v in _safe_vals if v in (2, 3)]
     if _safe_present:
         d.closures_secured = all(v == 2 for v in _safe_present)
+    # Still CONSUME the two dropped leaves (their only consumer was the aggregate)
+    # so the Scout does not re-report them as unmapped every poll; their unreliable
+    # polarity means we read-and-discard rather than surface a value.
+    first("safe_state_front_engine_bonnet")
+    first("safe_state_tailgate")
 
     # state_* closures (2=open 3=closed; 0=unsupported/1=invalid → ignore).
     _sunroof_vals = [

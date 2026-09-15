@@ -259,6 +259,7 @@
           "keep_raw_datasets": "Ruwe EU Data Act-datasets bewaren (diagnose)",
           "auto_utility_meters": "Maandelijkse meters automatisch aanmaken (geladen energie, kilometerstand)",
           "test_cohort": "Help VW Group Connect verbeteren (opt-in testgroep)",
+          "vwde_cred_relogin": "Volkswagen.de: opnieuw inloggen met het opgeslagen wachtwoord als de websessie verloopt",
           "vweu_device_grant": "VW EU Two-Way toevoegen — commando's + live uitlezingen (BÈTA)",
           "remove_vweu_twoway": "VW EU Two-Way verwijderen (terug naar het vorige kanaal)",
           "companion_read_vehicle_health": "Companion: kilometerstand en onderhoud uit de voertuigcheck lezen (navigeert in de app)",
@@ -287,6 +288,7 @@
           "keep_raw_datasets": "Alleen nuttig op het EU Data Act-portaalkanaal. Indien ingeschakeld worden de laatste paar ruwe dataset-ZIP's die het portaal levert op schijf bewaard (onder .storage, per voertuig en met een groottelimiet), zodat een verkeerde of ontbrekende waarde kan worden gereproduceerd uit precies de bytes die je auto heeft verzonden. Deze bestanden bevatten je GPS-locatie, VIN en telemetrie, dus standaard staat dit uit – schakel het alleen in tijdens het oplossen van problemen.",
           "auto_utility_meters": "Standaard uit. Wanneer ingeschakeld maakt de integratie Home Assistant utility_meter-helpers aan die je geladen energie en kilometerstand per kalendermaand optellen, één per voertuig. De schakelaar verschijnt alleen als er al een bijpassende bronsensor bestaat. Dit zijn permanente helpers: dit weer uitschakelen stopt het aanmaken van nieuwe, maar verwijdert de reeds gemaakte niet – verwijder die via Instellingen → Apparaten en diensten → Helpers.",
           "test_cohort": "Standaard uitgeschakeld. Zet dit aan om de integratie experimenteel gegevens van je auto te laten uitlezen — zoals de lopende poging om de GPS-locatie van Volkswagen EU-auto's terug te halen — en af en toe een melding te tonen die je kunt wegklikken, met de vraag of je een diagnosebestand wilt delen zodat een nieuwe functie voor jouw model bevestigd kan worden. Alles wat je deelt wordt automatisch geanonimiseerd voordat het je systeem verlaat: er zit nooit een VIN, GPS, token of e-mailadres in. Zo worden nieuwe functies ontgrendeld voor jouw auto en voor iedereen die hetzelfde model rijdt — en je kunt het op elk moment weer uitzetten.",
+          "vwde_cred_relogin": "Standaard uit. Heeft alleen invloed op het Volkswagen.de-leeskanaal. Als het stille hervatten van de sessie mislukt, logt de integratie opnieuw in met het wachtwoord dat je al hebt opgeslagen in plaats van je te vragen het kanaal opnieuw toe te voegen. Hierdoor kan Volkswagen hooguit eens per 15 minuten een e-mailcode sturen; als er een code nodig is, kan die niet automatisch worden ingevoerd en wordt je gevraagd het kanaal opnieuw toe te voegen.",
           "vweu_device_grant": "Alleen Volkswagen, BÈTA. Voegt tweerichtingsbediening (vergrendelen/ontgrendelen, klimaat, laden) en live CARIAD-uitlezingen toe door je aan te melden met je Volkswagen ID. Volkswagen geeft hier maar een token van 1 uur af, dus je wachtwoord wordt opgeslagen om het automatisch te vernieuwen — het wordt alleen naar de eigen loginserver van Volkswagen verzonden en nooit vastgelegd in logboeken of diagnose. Wil je liever geen wachtwoord opslaan, gebruik dan de alleen-lezen kanalen. Dit aanvinken opent de aanmeldstap."
         }
       },
@@ -2397,61 +2399,61 @@
   "triggers": {
     "started_charging": {
       "name": "Voertuig is begonnen met laden",
-      "description": "Wordt geactiveerd wanneer een voertuig begint met laden."
+      "description": "Wordt geactiveerd wanneer een voertuig begint met laden. Optioneel te beperken tot één voertuig met de vin-optie of een doelapparaat."
     },
     "stopped_charging": {
       "name": "Voertuig is gestopt met laden",
-      "description": "Wordt geactiveerd wanneer een voertuig stopt met laden."
+      "description": "Wordt geactiveerd wanneer een voertuig stopt met laden. Optioneel te beperken tot één voertuig met de vin-optie of een doelapparaat."
     },
     "plugged_in": {
       "name": "Voertuig aangesloten",
-      "description": "Wordt geactiveerd wanneer de laadkabel van een voertuig wordt aangesloten."
+      "description": "Wordt geactiveerd wanneer de laadkabel van een voertuig wordt aangesloten. Optioneel te beperken tot één voertuig met de vin-optie of een doelapparaat."
     },
     "unplugged": {
       "name": "Voertuig losgekoppeld",
-      "description": "Wordt geactiveerd wanneer de laadkabel van een voertuig wordt losgekoppeld."
+      "description": "Wordt geactiveerd wanneer de laadkabel van een voertuig wordt losgekoppeld. Optioneel te beperken tot één voertuig met de vin-optie of een doelapparaat."
     },
     "locked": {
       "name": "Voertuig vergrendeld",
-      "description": "Wordt geactiveerd wanneer een voertuig wordt vergrendeld."
+      "description": "Wordt geactiveerd wanneer een voertuig wordt vergrendeld. Optioneel te beperken tot één voertuig met de vin-optie of een doelapparaat."
     },
     "unlocked": {
       "name": "Voertuig ontgrendeld",
-      "description": "Wordt geactiveerd wanneer een voertuig wordt ontgrendeld."
+      "description": "Wordt geactiveerd wanneer een voertuig wordt ontgrendeld. Optioneel te beperken tot één voertuig met de vin-optie of een doelapparaat."
     },
     "started_preconditioning": {
       "name": "Voertuig is begonnen met voorconditioneren",
-      "description": "Wordt geactiveerd wanneer een voertuig begint met het voorconditioneren van het klimaat."
+      "description": "Wordt geactiveerd wanneer een voertuig begint met het voorconditioneren van het klimaat. Optioneel te beperken tot één voertuig met de vin-optie of een doelapparaat."
     },
     "stopped_preconditioning": {
       "name": "Voertuig is gestopt met voorconditioneren",
-      "description": "Wordt geactiveerd wanneer een voertuig stopt met het voorconditioneren van het klimaat."
+      "description": "Wordt geactiveerd wanneer een voertuig stopt met het voorconditioneren van het klimaat. Optioneel te beperken tot één voertuig met de vin-optie of een doelapparaat."
     },
     "charge_target_reached": {
       "name": "Voertuig heeft zijn laaddoel bereikt",
-      "description": "Wordt geactiveerd wanneer het laadniveau van een voertuig zijn doel bereikt."
+      "description": "Wordt geactiveerd wanneer het laadniveau van een voertuig zijn doel bereikt. Optioneel te beperken tot één voertuig met de vin-optie of een doelapparaat."
     }
   },
   "conditions": {
     "is_charging": {
       "name": "Een voertuig laadt",
-      "description": "Test of een voertuig op dit moment laadt."
+      "description": "Test of een voertuig op dit moment laadt. Optioneel te beperken tot één voertuig met de vin-optie of een doelapparaat."
     },
     "is_plugged_in": {
       "name": "Een voertuig is aangesloten",
-      "description": "Test of de laadkabel van een voertuig is aangesloten."
+      "description": "Test of de laadkabel van een voertuig is aangesloten. Optioneel te beperken tot één voertuig met de vin-optie of een doelapparaat."
     },
     "is_locked": {
       "name": "Een voertuig is vergrendeld",
-      "description": "Test of een voertuig is vergrendeld."
+      "description": "Test of een voertuig is vergrendeld. Optioneel te beperken tot één voertuig met de vin-optie of een doelapparaat."
     },
     "is_preconditioning": {
       "name": "Een voertuig is aan het voorconditioneren",
-      "description": "Test of een voertuig het klimaat aan het voorconditioneren is."
+      "description": "Test of een voertuig het klimaat aan het voorconditioneren is. Optioneel te beperken tot één voertuig met de vin-optie of een doelapparaat."
     },
     "is_charge_target_reached": {
       "name": "Een voertuig heeft zijn laaddoel bereikt",
-      "description": "Test of het laadniveau van een voertuig op of boven zijn doel is."
+      "description": "Test of het laadniveau van een voertuig op of boven zijn doel is. Optioneel te beperken tot één voertuig met de vin-optie of een doelapparaat."
     }
   }
 }

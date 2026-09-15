@@ -144,6 +144,23 @@ _MAX_SSO_REDIRECTS = 30
 # the user just sees stale data on our #1 read-path hedge and files no issue.)
 _PROACTIVE_ROLL_INTERVAL_S = 600.0
 
+# v4.7.11 (parity ADOPT, #1229) — master data (model name / year / colour / engine)
+# and the exterior render URL list are STATIC per car, yet both were re-fetched on
+# EVERY poll in the get_vehicle_data tail (fill-only). Cache them per-VIN in memory
+# on a monotonic-clock TTL so a car that already has its name + renders doesn't spend
+# two extra GETs each cycle: master data barely changes → 24 h; the render URLs are
+# public-CDN links but could rotate, so keep them on the shorter 6 h TTL.
+_STATIC_MASTER_TTL_S = 86400
+_STATIC_IMAGES_TTL_S = 21600
+
+# v4.7.11 (#465/#632/#966) — OPT-IN credential re-login cooldown. When the silent
+# SSO resume is dead AND the user opted in, refresh() may replay the stored
+# password ONCE per this window (see relogin_if_allowed). 900 s ≈ one poll cycle,
+# so a persistently dead SSO triggers at most one credential login — and thus at
+# most one VW email-OTP — every ~15 min, never a per-VIN storm. Together with the
+# v4.7.10 per-cycle resume latch this bounds retries from both directions.
+_CRED_RELOGIN_COOLDOWN_S = 900.0
+
 # v2.14.9 — cookie persistence spans BOTH hosts: the portal session cookies on
 # www.volkswagen.de AND the ``auth0`` SSO cookie on identity.vwgroup.io. The
 # SSO cookie is host-only (aiohttp exposes an empty domain for it), so it must
@@ -480,6 +497,15 @@ class WebsiteAuthProxyConnector:
         # still raised (cheaply, without the extra GET), so the Repair flow is
         # unchanged.
         self._resume_dead_this_cycle: bool = False
+        # v4.7.11 (#465/#632/#966) — OPT-IN: when the silent SSO resume dies, replay
+        # the stored password ONCE (begin_login) instead of surfacing a re-add.
+        # Default OFF; armed from CONF_VWDE_CRED_RELOGIN via the coordinator
+        # (mirrors the test-cohort flag, live-reapplied by the options listener).
+        # ``_last_cred_relogin`` is the monotonic stamp of the last credential
+        # login attempt so a dead SSO can trigger at most one login (and at most
+        # one VW email-OTP) per _CRED_RELOGIN_COOLDOWN_S. -inf = never tried.
+        self.allow_cred_relogin: bool = False
+        self._last_cred_relogin: float = float("-inf")
         # Per-VIN platform backend ("MBB"/"MEB"/…) learned from the relations
         # parse, so the live-status reads pick the right ``gdc`` — an MBB car
         # uses a different global-data-centre than a WeConnect car, and the
@@ -539,6 +565,16 @@ class WebsiteAuthProxyConnector:
         # it for a car, complementing the post-hoc mbb_no_legacy operationList
         # verdict. Nothing in the poll/command path reads it.
         self.mbb_eligibility: dict[str, str] = {}
+
+        # v4.7.11 (parity ADOPT, #1229) — per-VIN in-memory TTL caches for the
+        # STATIC vw.de reads (master data + exterior render URL list), keyed by
+        # VIN → (monotonic_stored_at, value). On a cache hit within the TTL the
+        # network GET is skipped and the cached object is reused with the SAME
+        # fill-only semantics; a miss fetches + stores; a FAILED fetch keeps the
+        # prior entry (fail-soft) so a transient hiccup never drops a good name /
+        # render list. Cleared implicitly on connector re-create (new login).
+        self._master_cache: dict[str, tuple[float, AuthproxyVehicleInfo]] = {}
+        self._images_cache: dict[str, tuple[float, list[AuthproxyImage]]] = {}
 
     _POSITION_PROBE_MAX_TRIES = 4
     _SOH_PROBE_MAX_TRIES = 4
@@ -860,6 +896,51 @@ class WebsiteAuthProxyConnector:
         self._finalise_login(landed)
         return self.logged_in
 
+    async def relogin_if_allowed(self) -> bool:
+        """v4.7.11 (#465/#632/#966) — OPT-IN stored-password re-login for a dead
+        silent resume. Returns ``True`` iff a fresh credential login landed us
+        back on volkswagen.de (cookies rotated → the caller's normal persist path
+        saves them). Parity ADOPT from the other vw.de cookie-camp project.
+
+        No-op (returns ``False``) unless the user opted in (``allow_cred_relogin``)
+        AND a password is held AND the monotonic cooldown has elapsed — so a
+        persistently dead SSO can trigger at most one credential login, and thus
+        at most one VW email-OTP, per ``_CRED_RELOGIN_COOLDOWN_S``. The stamp is
+        taken BEFORE the attempt, so even a failing login consumes the cooldown
+        (no hammering). An email-OTP challenge is deliberately NOT auto-answered
+        (there is no code to enter, and the OTP path only lives on the
+        interactive login): we log ONE actionable INFO line and return ``False``
+        WITHOUT calling ``submit_otp`` — this is what stops the "fresh e-mail
+        every refresh" storm ``refresh`` was written to avoid. Bad credentials /
+        an unexpected flow (``AuthenticationError``) also return ``False``.
+        """
+        if not self.allow_cred_relogin or not self._password:
+            return False
+        now = time.monotonic()
+        if (now - self._last_cred_relogin) < _CRED_RELOGIN_COOLDOWN_S:
+            return False
+        # Stamp BEFORE the attempt: a login that raises or needs OTP must still
+        # burn the cooldown so the next dead-SSO poll can't immediately retry.
+        self._last_cred_relogin = now
+        try:
+            result = await self.begin_login()
+        except AuthenticationError:
+            # Bad password / unexpected flow — fall back to the graceful re-add.
+            return False
+        if result == "otp_required":
+            # A fresh e-mail code is required; we cannot enter it here, so surface
+            # a single actionable line (no secrets) and let the caller raise the
+            # normal "re-add the channel" verdict. We do NOT call submit_otp.
+            _LOGGER.info(
+                "Website authproxy: automatic stored-password re-login reached a "
+                "VW e-mail code challenge — re-add the Volkswagen.de read channel "
+                "from the integration options to enter the code"
+            )
+            return False
+        # "ok" → begin_login()'s _finalise_login already set logged_in and cleared
+        # the per-cycle latch; the caller can treat the session as live.
+        return True
+
     async def refresh(self) -> None:
         """Silently re-establish the session via the persisted SSO cookie.
 
@@ -950,6 +1031,18 @@ class WebsiteAuthProxyConnector:
         if not on_portal and (
             "/u/login" in landed_path or "/signin-service" in landed_path
         ):
+            # v4.7.11 (#465/#632/#966) — the silent SSO resume is dead. When the
+            # user opted in, do ONE cooldown-bounded credential re-login here
+            # instead of surfacing a re-add: begin_login replays the stored
+            # password and, on success, rotates fresh cookies (the caller's normal
+            # persist path saves them). Bounded by the 15-min cooldown AND the
+            # v4.7.10 per-cycle resume latch (the latch short-circuits above, so a
+            # cycle whose proactive roll already tried this won't retry), so no
+            # OTP-email storm / loop is possible. An OTP requirement or bad
+            # credentials fall through to the same raise as before, so the opt-out
+            # default preserves today's exact behaviour.
+            if await self.relogin_if_allowed():
+                return
             raise AuthenticationError(
                 "Website authproxy: SSO session expired — full re-login required"
             )
@@ -1507,7 +1600,13 @@ class WebsiteAuthProxyConnector:
         guest car would get NO model name — even though ``data`` carries it. So
         a per-car 4xx on either read degrades to ``None`` and we still parse
         whatever the other endpoint returned (session validity is gated by the
-        core reads in ``get_vehicle_data``, which run first)."""
+        core reads in ``get_vehicle_data``, which run first).
+
+        v4.7.11 (parity ADOPT, #1229) — this data is STATIC per car but ran on
+        every poll. Cache the result per-VIN on a 24 h monotonic TTL: a hit within
+        the window returns the cached info WITHOUT the two GETs; a miss fetches +
+        stores; if BOTH reads soft-fail (nothing parsed) a prior good entry is
+        kept rather than caching an empty (fail-soft)."""
         from .._authproxy import (  # noqa: PLC0415
             AuthproxyVehicleInfo,
             build_vehicle_data_url,
@@ -1516,17 +1615,29 @@ class WebsiteAuthProxyConnector:
             parse_vehicle_details,
         )
 
+        cached = self._master_cache.get(vin)
+        if cached is not None and (time.monotonic() - cached[0]) < _STATIC_MASTER_TTL_S:
+            return cached[1]
+
         info = AuthproxyVehicleInfo()
+        got = False
         details = await self._get_json(
             build_vehicle_details_url(vin), soft=True, optional=True
         )
         if details is not None:
             info = parse_vehicle_details(details, info)
+            got = True
         data = await self._get_json(
             build_vehicle_data_url(vin), soft=True, optional=True
         )
         if data is not None:
             info = parse_vehicle_data(data, info)
+            got = True
+        if not got:
+            # both reads soft-failed → keep any prior good info, else the fresh
+            # empty (the caller's fill-only tail then simply fills nothing).
+            return cached[1] if cached is not None else info
+        self._master_cache[vin] = (time.monotonic(), info)
         return info
 
     async def get_warning_lights(self, vin: str) -> int | None:
@@ -1784,14 +1895,29 @@ class WebsiteAuthProxyConnector:
         return parse_usercapabilities(body)
 
     async def get_exterior_images(self, vin: str) -> list[AuthproxyImage]:
-        """Exterior render URLs ({url, angle, viewDirection}) for *vin*."""
+        """Exterior render URLs ({url, angle, viewDirection}) for *vin*.
+
+        v4.7.11 (parity ADOPT, #1229) — the render list is STATIC per car but ran
+        on every poll. Cache it per-VIN on a 6 h monotonic TTL (the URLs are
+        public-CDN links but could rotate, so shorter than master data): a hit
+        within the window returns the cached list WITHOUT the GET; a miss fetches
+        + stores; a soft-failed fetch (no body) keeps the prior list (fail-soft)."""
         from .._authproxy import (  # noqa: PLC0415
             build_vehicle_images_url,
             parse_vehicle_images,
         )
 
+        cached = self._images_cache.get(vin)
+        if cached is not None and (time.monotonic() - cached[0]) < _STATIC_IMAGES_TTL_S:
+            return cached[1]
+
         body = await self._get_json(build_vehicle_images_url(vin), soft=True)
-        return parse_vehicle_images(body) if body is not None else []
+        if body is None:
+            # fail-soft → reuse a prior good list rather than dropping the renders.
+            return cached[1] if cached is not None else []
+        images = parse_vehicle_images(body)
+        self._images_cache[vin] = (time.monotonic(), images)
+        return images
 
     async def get_vehicle_data(self, vin: str) -> VehicleData:
         """Fetch charging + maintenance + live-status for *vin* → ``VehicleData``.
@@ -1857,6 +1983,7 @@ class WebsiteAuthProxyConnector:
                 build_charging_url(vin, self._gdc(vin)),
                 accept="*/*",
                 soft=True,
+                record_as="vwde_charging",  # v4.7.11 (#1313) — status-only, lands in diagnostics
             )
             if isinstance(charging, dict):
                 map_charging_to_vehicle_data(charging, d)
@@ -1867,6 +1994,7 @@ class WebsiteAuthProxyConnector:
                 build_maintenance_url(vin, self._gdc(vin)),
                 accept="*/*",
                 soft=True,
+                record_as="vwde_maintenance",  # v4.7.11 (#1313) — status-only, lands in diagnostics
             )
             if isinstance(maintenance, dict):
                 map_maintenance_to_vehicle_data(maintenance, d)

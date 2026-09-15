@@ -259,6 +259,7 @@
           "keep_raw_datasets": "Conservar los conjuntos de datos brutos de EU Data Act (diagnóstico)",
           "auto_utility_meters": "Crear medidores mensuales automáticamente (energía cargada, kilometraje)",
           "test_cohort": "Ayuda a mejorar VW Group Connect (grupo de pruebas voluntario)",
+          "vwde_cred_relogin": "Volkswagen.de: volver a iniciar sesión con la contraseña guardada cuando caduque la sesión web",
           "vweu_device_grant": "Añadir VW EU bidireccional — comandos + lecturas en vivo (BETA)",
           "remove_vweu_twoway": "Eliminar VW EU bidireccional (volver al canal anterior)",
           "companion_read_vehicle_health": "Companion: leer cuentakilómetros y servicio desde el estado del vehículo (navega por la app)",
@@ -287,6 +288,7 @@
           "keep_raw_datasets": "Solo es útil en el canal del portal EU Data Act. Cuando está activado, los últimos archivos ZIP de datos brutos que entrega el portal se guardan en el disco (en .storage, por vehículo y con un límite de tamaño) para poder reproducir un valor incorrecto o ausente a partir de los bytes exactos que envió tu coche. Estos archivos contienen tu ubicación GPS, el VIN y la telemetría, por lo que está desactivado de forma predeterminada; actívalo solo mientras diagnosticas un problema.",
           "auto_utility_meters": "Desactivado de forma predeterminada. Cuando está activado, la integración crea ayudantes utility_meter de Home Assistant que suman tu energía cargada y tu kilometraje por mes natural, uno por vehículo. El interruptor solo aparece cuando ya existe un sensor de origen compatible. Son ayudantes permanentes: volver a desactivarlo evita que se creen nuevos, pero no elimina los ya creados; elimínalos en Ajustes → Dispositivos y servicios → Ayudantes.",
           "test_cohort": "Desactivado de forma predeterminada. Actívalo para permitir que la integración pruebe lecturas experimentales en tu coche —como el intento en curso de recuperar la ubicación GPS de los Volkswagen de la UE— y para que, de vez en cuando, te muestre una notificación que puedes descartar pidiéndote que compartas un archivo de diagnóstico con el que confirmar una nueva función para tu modelo. Todo lo que compartes se anonimiza automáticamente antes de salir de tu sistema: nunca se incluye el VIN, el GPS, tokens ni tu correo electrónico. Así es como se desbloquean nuevas funciones para tu coche y para todos los que conducen el mismo modelo, y puedes volver a desactivarlo cuando quieras.",
+          "vwde_cred_relogin": "Desactivado de forma predeterminada. Solo afecta al canal de lectura de Volkswagen.de. Cuando la reanudación silenciosa de la sesión falla, la integración vuelve a iniciar sesión con la contraseña que ya guardaste en lugar de pedirte que vuelvas a añadir el canal. Esto puede hacer que Volkswagen envíe como máximo un código por correo electrónico cada 15 minutos; si se requiere un código, no se puede introducir automáticamente, por lo que se te pedirá que vuelvas a añadir el canal.",
           "vweu_device_grant": "Solo Volkswagen, BETA. Añade control bidireccional (bloqueo/desbloqueo, climatización, carga) y lecturas CARIAD en vivo iniciando sesión con tu Volkswagen ID. Aquí Volkswagen solo emite un token de 1 hora, así que tu contraseña se almacena para renovarlo automáticamente — solo se envía al propio servidor de inicio de sesión de Volkswagen y nunca se escribe en los registros ni en los diagnósticos. Si prefieres no almacenar una contraseña, usa los canales de solo lectura en su lugar. Al marcar esta casilla se abre el paso de inicio de sesión."
         }
       },
@@ -2397,61 +2399,61 @@
   "triggers": {
     "started_charging": {
       "name": "El vehículo empezó a cargar",
-      "description": "Se activa cuando un vehículo empieza a cargar."
+      "description": "Se activa cuando un vehículo empieza a cargar. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "stopped_charging": {
       "name": "El vehículo dejó de cargar",
-      "description": "Se activa cuando un vehículo deja de cargar."
+      "description": "Se activa cuando un vehículo deja de cargar. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "plugged_in": {
       "name": "Vehículo conectado",
-      "description": "Se activa cuando se conecta el cable de carga de un vehículo."
+      "description": "Se activa cuando se conecta el cable de carga de un vehículo. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "unplugged": {
       "name": "Vehículo desconectado",
-      "description": "Se activa cuando se desconecta el cable de carga de un vehículo."
+      "description": "Se activa cuando se desconecta el cable de carga de un vehículo. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "locked": {
       "name": "Vehículo bloqueado",
-      "description": "Se activa cuando un vehículo se bloquea."
+      "description": "Se activa cuando un vehículo se bloquea. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "unlocked": {
       "name": "Vehículo desbloqueado",
-      "description": "Se activa cuando un vehículo se desbloquea."
+      "description": "Se activa cuando un vehículo se desbloquea. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "started_preconditioning": {
       "name": "El vehículo inició el preacondicionamiento",
-      "description": "Se activa cuando un vehículo inicia el preacondicionamiento de la climatización."
+      "description": "Se activa cuando un vehículo inicia el preacondicionamiento de la climatización. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "stopped_preconditioning": {
       "name": "El vehículo detuvo el preacondicionamiento",
-      "description": "Se activa cuando un vehículo detiene el preacondicionamiento de la climatización."
+      "description": "Se activa cuando un vehículo detiene el preacondicionamiento de la climatización. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "charge_target_reached": {
       "name": "El vehículo alcanzó su objetivo de carga",
-      "description": "Se activa cuando el nivel de carga de un vehículo alcanza su objetivo."
+      "description": "Se activa cuando el nivel de carga de un vehículo alcanza su objetivo. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     }
   },
   "conditions": {
     "is_charging": {
       "name": "Un vehículo está cargando",
-      "description": "Comprueba si algún vehículo está cargando en este momento."
+      "description": "Comprueba si algún vehículo está cargando en este momento. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "is_plugged_in": {
       "name": "Un vehículo está conectado",
-      "description": "Comprueba si el cable de carga de algún vehículo está conectado."
+      "description": "Comprueba si el cable de carga de algún vehículo está conectado. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "is_locked": {
       "name": "Un vehículo está bloqueado",
-      "description": "Comprueba si algún vehículo está bloqueado."
+      "description": "Comprueba si algún vehículo está bloqueado. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "is_preconditioning": {
       "name": "Un vehículo está preacondicionando",
-      "description": "Comprueba si algún vehículo está ejecutando el preacondicionamiento de la climatización."
+      "description": "Comprueba si algún vehículo está ejecutando el preacondicionamiento de la climatización. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "is_charge_target_reached": {
       "name": "Un vehículo alcanzó su objetivo de carga",
-      "description": "Comprueba si el nivel de carga de algún vehículo está en su objetivo o por encima."
+      "description": "Comprueba si el nivel de carga de algún vehículo está en su objetivo o por encima. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     }
   }
 }

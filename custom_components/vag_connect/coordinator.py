@@ -1719,6 +1719,16 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             except Exception as exc:  # noqa: BLE001
                 _LOGGER.debug("test-cohort apply skipped (%s)", type(exc).__name__)
 
+            # v4.7.11 (#465/#632/#966) — arm the opt-in vw.de credential-relogin
+            # flag on the website-authproxy connector(s). Runs after both arm
+            # paths; idempotent, fail-soft.
+            try:
+                await self._apply_cred_relogin()
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.debug(
+                    "vw.de cred-relogin apply skipped (%s)", type(exc).__name__
+                )
+
             # Skip vehicles the user has disabled in HA so a deactivated car
             # stops consuming the daily request budget. Reassigning here means
             # both the gather and the zip below use the filtered list.
@@ -2896,6 +2906,25 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             raise_issue_test_cohort_share(self.hass, self.entry.entry_id)
         else:
             clear_issue_test_cohort_share(self.hass, self.entry.entry_id)
+
+    async def _apply_cred_relogin(self) -> None:
+        """v4.7.11 (#465/#632/#966) — wire the opt-in vw.de credential-relogin flag
+        to the website-authproxy connector(s). When on, a dead silent SSO resume is
+        recovered by ONE cooldown-bounded stored-password login instead of a re-add
+        (see WebsiteAuthProxyConnector.relogin_if_allowed). Read from ``entry.data``
+        (the options listener folds options → data; ``entry.options`` is always {}
+        at read time). Idempotent, fail-soft; mirrors ``_apply_test_cohort`` so a
+        live toggle takes effect without a restart."""
+        from .const import CONF_VWDE_CRED_RELOGIN  # noqa: PLC0415
+
+        allow = bool(self.entry.data.get(CONF_VWDE_CRED_RELOGIN))
+        client = self._cariad_client
+        if client is None:
+            return
+        for attr in ("_website_proxy", "_supplementary_authproxy"):
+            conn = getattr(client, attr, None)
+            if conn is not None and hasattr(conn, "allow_cred_relogin"):
+                conn.allow_cred_relogin = allow
 
     def _skoda_official_mode(self) -> str:
         """The configured Škoda official-API source mode (#1286). Options-then-data
@@ -7291,6 +7320,10 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         enabled: bool,
         departure_time: str | None,
         recurring_on: list[str] | None = None,
+        charging: bool | None = None,
+        climatisation: bool | None = None,
+        target_soc_pct: int | None = None,
+        one_off_day: str | None = None,
     ) -> None:
         """Set a departure timer via CARIAD API.
 
@@ -7299,6 +7332,13 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         weekly preheat schedules via the ``vag_connect.set_departure_timer``
         service. Forwarded as-is to the brand client; clients that don't
         support per-weekday schedules ignore the param.
+
+        v4.7.11 (departure-timer-rich-setter, myskoda #631/#640) — also
+        forwards optional ``charging`` / ``climatisation`` / ``target_soc_pct``
+        / ``one_off_day``. Only the CARIAD (vw.de/BFF) client sends them, and
+        only for opted-in test-cohort entries (the BFF write field names are
+        inferred from the read DTO); the other brand clients accept and ignore
+        them so the cross-brand signature stays uniform.
         """
         await self._cariad_cmd(
             vin,
@@ -7307,6 +7347,10 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             enabled=enabled,
             departure_time=departure_time,
             recurring_on=recurring_on,
+            charging=charging,
+            climatisation=climatisation,
+            target_soc_pct=target_soc_pct,
+            one_off_day=one_off_day,
         )
 
     async def async_engine_start(self, vin: str) -> None:

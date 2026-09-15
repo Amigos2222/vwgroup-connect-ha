@@ -259,6 +259,7 @@
           "keep_raw_datasets": "Uchovávat surová data EU Data Act (diagnostika)",
           "auto_utility_meters": "Automaticky vytvářet měsíční měřidla (nabitá energie, kilometry)",
           "test_cohort": "Pomozte vylepšit VW Group Connect (dobrovolná testovací skupina)",
+          "vwde_cred_relogin": "Volkswagen.de: při vypršení webové relace se znovu přihlásit uloženým heslem",
           "vweu_device_grant": "Přidat VW EU Two-Way — příkazy + živé čtení dat (BETA)",
           "remove_vweu_twoway": "Odebrat VW EU Two-Way (návrat k předchozímu kanálu)",
           "companion_read_vehicle_health": "Companion: číst stav tachometru a servis ze stavu vozidla (naviguje v aplikaci)",
@@ -287,6 +288,7 @@
           "keep_raw_datasets": "Užitečné pouze na kanálu portálu EU Data Act. Po zapnutí se posledních několik surových ZIP souborů s daty, které portál dodá, uchová na disku (v .storage, na vozidlo a s limitem velikosti), aby bylo možné chybnou nebo chybějící hodnotu reprodukovat z přesně těch bajtů, které vůz odeslal. Tyto soubory obsahují vaši GPS polohu, VIN a telemetrii, proto je funkce ve výchozím nastavení vypnutá – zapněte ji jen při řešení potíží.",
           "auto_utility_meters": "Ve výchozím nastavení vypnuto. Když je zapnuto, integrace vytvoří pomocníky Home Assistant utility_meter, kteří sčítají nabitou energii a ujeté kilometry za kalendářní měsíc, jednoho na vozidlo. Přepínač se objeví pouze tehdy, když už existuje odpovídající zdrojový senzor. Jsou to trvalí pomocníci: opětovným vypnutím se přestanou vytvářet noví, ale již vytvoření zůstanou – ty odstraňte v Nastavení → Zařízení a služby → Pomocníci.",
           "test_cohort": "Ve výchozím nastavení vypnuto. Když tuto možnost zapnete, integrace bude moci na vašem voze zkoušet experimentální čtení dat — třeba právě probíhající pokus o získání polohy GPS u vozů Volkswagen v EU — a občas vám zobrazí upozornění (které lze zavřít) s prosbou o sdílení diagnostického souboru, aby se pro váš model mohla potvrdit nová funkce. Vše, co sdílíte, se automaticky anonymizuje ještě předtím, než to opustí váš systém: nikdy to neobsahuje VIN, GPS, tokeny ani e-mail. Právě takto se odemykají nové funkce pro váš vůz i pro všechny, kdo jezdí stejným modelem — a kdykoli to zase můžete vypnout.",
+          "vwde_cred_relogin": "Ve výchozím nastavení vypnuto. Týká se pouze čtecího kanálu Volkswagen.de. Když tiché obnovení relace selže, integrace se znovu přihlásí heslem, které jste již uložili, místo aby vás žádala o opětovné přidání kanálu. Kvůli tomu může Volkswagen poslat nejvýše jeden e-mailový kód každých 15 minut; pokud je kód vyžadován, nelze jej zadat automaticky a budete požádáni o opětovné přidání kanálu.",
           "vweu_device_grant": "Pouze Volkswagen, BETA. Přidává obousměrné ovládání (zamknout/odemknout, klimatizace, nabíjení) a živé čtení dat z CARIAD po přihlášení pomocí vašeho Volkswagen ID. Volkswagen zde vydává pouze hodinový token, takže se vaše heslo uloží, aby jej integrace mohla automaticky obnovovat — odesílá se výhradně na přihlašovací server samotného Volkswagenu a nikdy se nezapisuje do logů ani diagnostiky. Pokud heslo raději ukládat nechcete, použijte místo toho kanály jen pro čtení. Zaškrtnutím této volby se otevře krok přihlášení."
         }
       },
@@ -2397,61 +2399,61 @@
   "triggers": {
     "started_charging": {
       "name": "Vozidlo zahájilo nabíjení",
-      "description": "Spustí se, když vozidlo zahájí nabíjení."
+      "description": "Spustí se, když vozidlo zahájí nabíjení. Volitelně lze omezit na jedno vozidlo pomocí volby vin nebo cílového zařízení."
     },
     "stopped_charging": {
       "name": "Vozidlo ukončilo nabíjení",
-      "description": "Spustí se, když vozidlo ukončí nabíjení."
+      "description": "Spustí se, když vozidlo ukončí nabíjení. Volitelně lze omezit na jedno vozidlo pomocí volby vin nebo cílového zařízení."
     },
     "plugged_in": {
       "name": "Vozidlo připojeno",
-      "description": "Spustí se, když je připojen nabíjecí kabel vozidla."
+      "description": "Spustí se, když je připojen nabíjecí kabel vozidla. Volitelně lze omezit na jedno vozidlo pomocí volby vin nebo cílového zařízení."
     },
     "unplugged": {
       "name": "Vozidlo odpojeno",
-      "description": "Spustí se, když je odpojen nabíjecí kabel vozidla."
+      "description": "Spustí se, když je odpojen nabíjecí kabel vozidla. Volitelně lze omezit na jedno vozidlo pomocí volby vin nebo cílového zařízení."
     },
     "locked": {
       "name": "Vozidlo uzamčeno",
-      "description": "Spustí se, když se vozidlo uzamkne."
+      "description": "Spustí se, když se vozidlo uzamkne. Volitelně lze omezit na jedno vozidlo pomocí volby vin nebo cílového zařízení."
     },
     "unlocked": {
       "name": "Vozidlo odemčeno",
-      "description": "Spustí se, když se vozidlo odemkne."
+      "description": "Spustí se, když se vozidlo odemkne. Volitelně lze omezit na jedno vozidlo pomocí volby vin nebo cílového zařízení."
     },
     "started_preconditioning": {
       "name": "Vozidlo zahájilo předklimatizaci",
-      "description": "Spustí se, když vozidlo zahájí předklimatizaci."
+      "description": "Spustí se, když vozidlo zahájí předklimatizaci. Volitelně lze omezit na jedno vozidlo pomocí volby vin nebo cílového zařízení."
     },
     "stopped_preconditioning": {
       "name": "Vozidlo ukončilo předklimatizaci",
-      "description": "Spustí se, když vozidlo ukončí předklimatizaci."
+      "description": "Spustí se, když vozidlo ukončí předklimatizaci. Volitelně lze omezit na jedno vozidlo pomocí volby vin nebo cílového zařízení."
     },
     "charge_target_reached": {
       "name": "Vozidlo dosáhlo cíle nabití",
-      "description": "Spustí se, když úroveň nabití vozidla dosáhne cílové hodnoty."
+      "description": "Spustí se, když úroveň nabití vozidla dosáhne cílové hodnoty. Volitelně lze omezit na jedno vozidlo pomocí volby vin nebo cílového zařízení."
     }
   },
   "conditions": {
     "is_charging": {
       "name": "Vozidlo nabíjí",
-      "description": "Zjišťuje, zda některé vozidlo právě nabíjí."
+      "description": "Zjišťuje, zda některé vozidlo právě nabíjí. Volitelně lze omezit na jedno vozidlo pomocí volby vin nebo cílového zařízení."
     },
     "is_plugged_in": {
       "name": "Vozidlo je připojeno",
-      "description": "Zjišťuje, zda je připojen nabíjecí kabel některého vozidla."
+      "description": "Zjišťuje, zda je připojen nabíjecí kabel některého vozidla. Volitelně lze omezit na jedno vozidlo pomocí volby vin nebo cílového zařízení."
     },
     "is_locked": {
       "name": "Vozidlo je uzamčeno",
-      "description": "Zjišťuje, zda je některé vozidlo uzamčeno."
+      "description": "Zjišťuje, zda je některé vozidlo uzamčeno. Volitelně lze omezit na jedno vozidlo pomocí volby vin nebo cílového zařízení."
     },
     "is_preconditioning": {
       "name": "Vozidlo předklimatizuje",
-      "description": "Zjišťuje, zda některé vozidlo právě předklimatizuje."
+      "description": "Zjišťuje, zda některé vozidlo právě předklimatizuje. Volitelně lze omezit na jedno vozidlo pomocí volby vin nebo cílového zařízení."
     },
     "is_charge_target_reached": {
       "name": "Vozidlo dosáhlo cíle nabití",
-      "description": "Zjišťuje, zda úroveň nabití některého vozidla dosáhla cílové hodnoty nebo ji překročila."
+      "description": "Zjišťuje, zda úroveň nabití některého vozidla dosáhla cílové hodnoty nebo ji překročila. Volitelně lze omezit na jedno vozidlo pomocí volby vin nebo cílového zařízení."
     }
   }
 }

@@ -1497,6 +1497,9 @@ class TestDepartureTimerAction:
         coord._cariad_client.command_set_departure_timer.assert_awaited_once_with(
             "VIN1", timer_id=1, enabled=True, departure_time="07:30",
             recurring_on=None,
+            # v4.7.11 — rich fields always forwarded (None here), CARIAD-only.
+            charging=None, climatisation=None, target_soc_pct=None,
+            one_off_day=None,
         )
         coord.async_request_refresh.assert_awaited()
 
@@ -1509,6 +1512,8 @@ class TestDepartureTimerAction:
         coord._cariad_client.command_set_departure_timer.assert_awaited_once_with(
             "VIN1", timer_id=2, enabled=False, departure_time=None,
             recurring_on=None,
+            charging=None, climatisation=None, target_soc_pct=None,
+            one_off_day=None,
         )
 
     def test_set_departure_timer_with_weekly_preheat(self):
@@ -1524,4 +1529,6 @@ class TestDepartureTimerAction:
         coord._cariad_client.command_set_departure_timer.assert_awaited_once_with(
             "VIN1", timer_id=3, enabled=True, departure_time="06:30",
             recurring_on=["MONDAY", "TUESDAY", "WEDNESDAY"],
+            charging=None, climatisation=None, target_soc_pct=None,
+            one_off_day=None,
         )

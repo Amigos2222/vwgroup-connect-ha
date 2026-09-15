@@ -43,7 +43,15 @@ _LOGGER = logging.getLogger(__name__)
 
 # Identity / bookkeeping fields the merge must never touch.
 _SKIP_FIELDS = frozenset(
-    {"vin", "source_channel", "field_sources", "no_data", "has_battery",
+    {"vin", "source_channel", "field_sources",
+     # v4.7.11 (#465/#529/#1218) — per-value freshness + ambiguity bookkeeping.
+     # Like ``field_sources`` these are attribute-keyed provenance, not readings:
+     # the generic gap-fill must never merge them field-by-field (that would mix a
+     # ts onto a field a different channel owns). merge_channels rebuilds them from
+     # the final ``field_sources`` instead, so the ts always tracks the surviving
+     # value.
+     "field_captured_ts", "ambiguous_fields",
+     "no_data", "has_battery",
      "has_combustion", "is_electric", "is_hybrid"}
 )
 
@@ -273,6 +281,36 @@ def merge_channels(
     # even for a single-channel merge, so an entity can always answer "where
     # did my value come from" rather than only on multi-channel entries.
     merged.field_sources = field_sources
+
+    # v4.7.11 (#465/#529/#1218) — carry per-value freshness + ambiguity, rebuilt
+    # from scratch each merge exactly like field_sources. For every field, take
+    # the entry from the SAME source that OWNS it in ``field_sources`` (computed
+    # above, AFTER live-supersede / position / last_seen overrides), so the
+    # timestamp always belongs to the value that actually survived. EU-DA is the
+    # only channel that populates these, so only EU-DA-sourced fields get an
+    # entry; when a live channel supersedes an EU-DA field the ts is correctly
+    # dropped (its owner no longer carries one).
+    name_to_vd: dict[str, VehicleData] = {}
+    for nm, vd in sources:
+        name_to_vd.setdefault(nm, vd)
+    captured_ts: dict[str, str] = {}
+    ambiguous: dict[str, str] = {}
+    for f_name, owner in field_sources.items():
+        owner_vd = name_to_vd.get(owner)
+        if owner_vd is None:
+            continue
+        src_ts = getattr(owner_vd, "field_captured_ts", None)
+        if isinstance(src_ts, dict):
+            iso = src_ts.get(f_name)
+            if isinstance(iso, str) and iso:
+                captured_ts[f_name] = iso
+        src_amb = getattr(owner_vd, "ambiguous_fields", None)
+        if isinstance(src_amb, dict):
+            note = src_amb.get(f_name)
+            if isinstance(note, str) and note:
+                ambiguous[f_name] = note
+    merged.field_captured_ts = captured_ts
+    merged.ambiguous_fields = ambiguous
 
     # ``merged`` is fully independent: base was deep-copied (above) and every
     # gap-filled value was deep-copied on assignment, so no mutable field is

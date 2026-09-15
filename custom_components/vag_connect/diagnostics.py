@@ -620,6 +620,11 @@ async def async_get_config_entry_diagnostics(
         client,
         getattr(client, "_mbb_command", None) if client is not None else None,
         getattr(client, "_mbb_fallback", None) if client is not None else None,
+        # v4.7.11 (#1313) — the supplementary vw.de connector keeps its own probe
+        # outcomes; _read_authproxy copies them up only after a read ran, so union
+        # the connector directly too (a download before the first poll showed {}).
+        getattr(client, "_supplementary_authproxy", None) if client is not None else None,
+        getattr(client, "_website_proxy", None) if client is not None else None,
     ):
         _po = getattr(_obj, "probe_outcomes", None) if _obj is not None else None
         if isinstance(_po, dict):
@@ -642,6 +647,11 @@ async def async_get_config_entry_diagnostics(
         client,
         getattr(client, "_mbb_command", None) if client is not None else None,
         getattr(client, "_mbb_fallback", None) if client is not None else None,
+        # v4.7.11 (#1313) — the supplementary vw.de connector keeps its own probe
+        # outcomes; _read_authproxy copies them up only after a read ran, so union
+        # the connector directly too (a download before the first poll showed {}).
+        getattr(client, "_supplementary_authproxy", None) if client is not None else None,
+        getattr(client, "_website_proxy", None) if client is not None else None,
     ):
         _s = getattr(_obj, "mbb_no_legacy_vins", None) if _obj is not None else None
         if _s:

@@ -15,10 +15,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.const import CONF_OPTIONS
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN
+# v4.7.11 (trigger-vin-targeting) — share the vin option schema + device→VIN
+# resolver with the trigger platform (both are platform-class-independent, so
+# this import is safe on cores without the named-condition platform).
+from .trigger import _OPTIONS_SCHEMA, _resolve_target_vins
 
 # The named-condition platform only exists on HA 2026.7+ (upstream-flagged "do not
 # use yet by integrations"). Import it defensively so the module stays importable
@@ -67,10 +72,16 @@ def _vehicle_matches(condition_key: str, veh: dict[str, Any]) -> bool:
     return False
 
 
-def _any_vehicle_matches(hass: HomeAssistant, condition_key: str) -> bool:
+def _any_vehicle_matches(
+    hass: HomeAssistant, condition_key: str, vins: set[str] | None = None
+) -> bool:
+    # v4.7.11 — when *vins* is a non-empty set, only those VINs are considered
+    # (per-vehicle scoping); None/empty ⇒ any vehicle, the v1 account-wide check.
     for coord in _coordinators(hass):
         for vin, veh in (coord.vehicles or {}).items():
             if str(vin).startswith("_") or not isinstance(veh, dict):
+                continue
+            if vins and str(vin) not in vins:
                 continue
             if _vehicle_matches(condition_key, veh):
                 return True
@@ -86,14 +97,23 @@ class _VagVehicleCondition(Condition):
     async def async_validate_config(
         cls, hass: HomeAssistant, config: ConfigType
     ) -> ConfigType:
+        # v4.7.11 — validate/normalise the optional vin (same schema as triggers).
+        options = config.get(CONF_OPTIONS)
+        if options:
+            return {**config, CONF_OPTIONS: _OPTIONS_SCHEMA(options)}
         return config
 
     def __init__(self, hass: HomeAssistant, config: Any) -> None:
         super().__init__(hass, config)
         self._hass = hass
+        # v4.7.11 — the base Condition stores only _hass; keep the ConditionConfig
+        # (options/target) so _async_check can scope to the wanted VIN(s).
+        self._config = config
 
     def _async_check(self, **kwargs: Any) -> bool:
-        return _any_vehicle_matches(self._hass, self._condition_key)
+        return _any_vehicle_matches(
+            self._hass, self._condition_key, _resolve_target_vins(self._hass, self._config)
+        )
 
 
 def _make_condition(condition_key: str) -> type[Condition]:

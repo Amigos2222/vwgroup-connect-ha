@@ -1,0 +1,98 @@
+# Copyright 2026 Prash Balan (@its-me-prash) — GNU AGPL v3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# v4.7.11 — Blueprint library (notifications = the top competitor-tracker
+# demand): tell me when the car leaves or arrives at a zone, with a map link.
+#
+# Triggers on the vehicle's device_tracker changing zone (home <-> not_home, or
+# any named zone). We guard on the zone actually changing — not an attribute-only
+# re-fire — and build the standard maps link from the tracker's latitude /
+# longitude attributes so you can tap straight through to where it's parked.
+# A short debounce swallows a momentary GPS bounce across a zone edge.
+blueprint:
+  name: "Parked position changed — notify"
+  description: >
+    Notify your phone when this car leaves or arrives at a zone (e.g. leaves
+    home, arrives at work). The notification includes a map link to the car's
+    current coordinates so you can see exactly where it stopped.
+
+
+    Point the notify field at your phone's mobile_app notify service (e.g.
+    notify.mobile_app_iphone), with or without the "notify." prefix.
+  domain: automation
+  author: VW Group Connect (@its-me-prash)
+  input:
+    device_tracker:
+      name: "Car location tracker"
+      description: "The vehicle's device tracker (device_tracker.*)."
+      selector:
+        entity:
+          filter:
+            - integration: vag_connect
+              domain: device_tracker
+    debounce_seconds:
+      name: "Debounce (seconds)"
+      description: >
+        The new zone must hold this long before notifying, so a brief GPS bounce
+        across a zone edge doesn't ping you.
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 300
+          step: 5
+          unit_of_measurement: "s"
+    notify_service:
+      name: "Mobile notify service"
+      description: >
+        Your phone's notify service, e.g. notify.mobile_app_iphone. With or
+        without the "notify." prefix.
+      selector:
+        text:
+    car_name:
+      name: "Car name"
+      description: "Shown in the notification, e.g. \"ID.4\"."
+      default: "Car"
+      selector:
+        text:
+
+mode: single
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input device_tracker
+    for:
+      seconds: !input debounce_seconds
+    id: moved
+
+variables:
+  device_tracker: !input device_tracker
+  notify_service: !input notify_service
+  car_name: !input car_name
+  svc: "{{ (notify_service | default('', true)) | replace('notify.', '') }}"
+  # Prettify the zone name; not_home -> "away".
+  place: >
+    {{ 'away' if is_state(device_tracker, 'not_home')
+       else states(device_tracker) | replace('_', ' ') | title }}
+  lat: "{{ state_attr(device_tracker, 'latitude') }}"
+  lon: "{{ state_attr(device_tracker, 'longitude') }}"
+
+condition:
+  # Only on a genuine zone change — skip attribute-only re-fires (same zone).
+  - condition: template
+    value_template: >
+      {{ trigger.from_state is not none
+         and trigger.to_state is not none
+         and trigger.from_state.state != trigger.to_state.state }}
+
+action:
+  - service: "notify.{{ svc }}"
+    data:
+      title: "{{ car_name }} — moved"
+      message: >
+        {{ car_name }} is now {{ place }}.{% if lat and lon %} Map:
+        https://www.google.com/maps/search/?api=1&query={{ lat }},{{ lon }}{% endif %}
+      data:
+        tag: "vagc_parked_{{ car_name | slugify }}"
+        notification_icon: "mdi:map-marker"

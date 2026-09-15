@@ -259,6 +259,7 @@
           "keep_raw_datasets": "Zachowuj surowe zestawy danych EU Data Act (diagnostyka)",
           "auto_utility_meters": "Automatycznie twórz liczniki miesięczne (naładowana energia, przebieg)",
           "test_cohort": "Pomóż ulepszać VW Group Connect (dobrowolna grupa testowa)",
+          "vwde_cred_relogin": "Volkswagen.de: zaloguj ponownie zapisanym hasłem, gdy sesja internetowa wygaśnie",
           "vweu_device_grant": "Dodaj VW EU Two-Way — polecenia + odczyty na żywo (BETA)",
           "remove_vweu_twoway": "Usuń VW EU Two-Way (przywróć poprzedni kanał)",
           "companion_read_vehicle_health": "Companion: odczyt przebiegu i serwisu ze stanu pojazdu (nawiguje po aplikacji)",
@@ -287,6 +288,7 @@
           "keep_raw_datasets": "Przydatne tylko na kanale portalu EU Data Act. Po włączeniu ostatnie surowe pliki ZIP z danymi dostarczane przez portal są przechowywane na dysku (w .storage, na pojazd i z limitem rozmiaru), aby błędną lub brakującą wartość można było odtworzyć z dokładnie tych bajtów, które wysłał samochód. Te pliki zawierają Twoją lokalizację GPS, VIN i telemetrię, dlatego domyślnie są wyłączone – włącz je tylko podczas rozwiązywania problemów.",
           "auto_utility_meters": "Domyślnie wyłączone. Po włączeniu integracja tworzy pomocników utility_meter Home Assistant, którzy sumują naładowaną energię i przebieg w miesiącu kalendarzowym, po jednym na pojazd. Przełącznik pojawia się tylko wtedy, gdy istnieje już pasujący czujnik źródłowy. To trwali pomocnicy: ponowne wyłączenie zatrzymuje tworzenie nowych, ale nie usuwa już utworzonych – usuń je w Ustawienia → Urządzenia i usługi → Pomocnicy.",
           "test_cohort": "Domyślnie wyłączone. Włącz tę opcję, aby integracja mogła próbować eksperymentalnych odczytów danych z Twojego samochodu — na przykład trwającej próby odzyskania pozycji GPS w samochodach Volkswagena z UE — i od czasu do czasu wyświetlać powiadomienie (które możesz zamknąć) z prośbą o udostępnienie pliku diagnostycznego, dzięki czemu nowa funkcja może zostać potwierdzona dla Twojego modelu. Wszystko, co udostępniasz, jest automatycznie anonimizowane, zanim opuści Twój system: nigdy nie zawiera numeru VIN, danych GPS, tokenów ani adresu e-mail. Właśnie w ten sposób odblokowywane są nowe funkcje — dla Twojego samochodu i wszystkich, którzy jeżdżą tym samym modelem — a w każdej chwili możesz ją z powrotem wyłączyć.",
+          "vwde_cred_relogin": "Domyślnie wyłączone. Dotyczy tylko kanału odczytu Volkswagen.de. Gdy ciche wznowienie sesji się nie powiedzie, integracja loguje się ponownie przy użyciu już zapisanego hasła zamiast prosić o ponowne dodanie kanału. Może to sprawić, że Volkswagen wyśle najwyżej jeden kod e-mail co 15 minut; jeśli kod jest wymagany, nie można go wprowadzić automatycznie i pojawi się prośba o ponowne dodanie kanału.",
           "vweu_device_grant": "Tylko Volkswagen, BETA. Dodaje sterowanie dwukierunkowe (ryglowanie/odryglowanie, klimatyzacja, ładowanie) oraz odczyty na żywo z CARIAD po zalogowaniu się przy użyciu Volkswagen ID. Volkswagen wydaje tutaj token ważny tylko 1 godzinę, więc Twoje hasło jest przechowywane, aby móc odnawiać go automatycznie — jest wysyłane wyłącznie do własnego serwera logowania Volkswagena i nigdy nie trafia do logów ani diagnostyki. Jeśli wolisz nie przechowywać hasła, użyj zamiast tego kanałów tylko do odczytu. Zaznaczenie tej opcji otwiera krok logowania."
         }
       },
@@ -2397,61 +2399,61 @@
   "triggers": {
     "started_charging": {
       "name": "Pojazd rozpoczął ładowanie",
-      "description": "Wyzwalane, gdy pojazd rozpoczyna ładowanie."
+      "description": "Wyzwalane, gdy pojazd rozpoczyna ładowanie. Opcjonalnie można ograniczyć do jednego pojazdu za pomocą opcji vin lub urządzenia docelowego."
     },
     "stopped_charging": {
       "name": "Pojazd zakończył ładowanie",
-      "description": "Wyzwalane, gdy pojazd kończy ładowanie."
+      "description": "Wyzwalane, gdy pojazd kończy ładowanie. Opcjonalnie można ograniczyć do jednego pojazdu za pomocą opcji vin lub urządzenia docelowego."
     },
     "plugged_in": {
       "name": "Pojazd podłączony",
-      "description": "Wyzwalane, gdy kabel ładowania pojazdu zostaje podłączony."
+      "description": "Wyzwalane, gdy kabel ładowania pojazdu zostaje podłączony. Opcjonalnie można ograniczyć do jednego pojazdu za pomocą opcji vin lub urządzenia docelowego."
     },
     "unplugged": {
       "name": "Pojazd odłączony",
-      "description": "Wyzwalane, gdy kabel ładowania pojazdu zostaje odłączony."
+      "description": "Wyzwalane, gdy kabel ładowania pojazdu zostaje odłączony. Opcjonalnie można ograniczyć do jednego pojazdu za pomocą opcji vin lub urządzenia docelowego."
     },
     "locked": {
       "name": "Pojazd zablokowany",
-      "description": "Wyzwalane, gdy pojazd zostaje zablokowany."
+      "description": "Wyzwalane, gdy pojazd zostaje zablokowany. Opcjonalnie można ograniczyć do jednego pojazdu za pomocą opcji vin lub urządzenia docelowego."
     },
     "unlocked": {
       "name": "Pojazd odblokowany",
-      "description": "Wyzwalane, gdy pojazd zostaje odblokowany."
+      "description": "Wyzwalane, gdy pojazd zostaje odblokowany. Opcjonalnie można ograniczyć do jednego pojazdu za pomocą opcji vin lub urządzenia docelowego."
     },
     "started_preconditioning": {
       "name": "Pojazd rozpoczął wstępną klimatyzację",
-      "description": "Wyzwalane, gdy pojazd rozpoczyna wstępną klimatyzację."
+      "description": "Wyzwalane, gdy pojazd rozpoczyna wstępną klimatyzację. Opcjonalnie można ograniczyć do jednego pojazdu za pomocą opcji vin lub urządzenia docelowego."
     },
     "stopped_preconditioning": {
       "name": "Pojazd zakończył wstępną klimatyzację",
-      "description": "Wyzwalane, gdy pojazd kończy wstępną klimatyzację."
+      "description": "Wyzwalane, gdy pojazd kończy wstępną klimatyzację. Opcjonalnie można ograniczyć do jednego pojazdu za pomocą opcji vin lub urządzenia docelowego."
     },
     "charge_target_reached": {
       "name": "Pojazd osiągnął docelowy poziom naładowania",
-      "description": "Wyzwalane, gdy poziom naładowania pojazdu osiąga wartość docelową."
+      "description": "Wyzwalane, gdy poziom naładowania pojazdu osiąga wartość docelową. Opcjonalnie można ograniczyć do jednego pojazdu za pomocą opcji vin lub urządzenia docelowego."
     }
   },
   "conditions": {
     "is_charging": {
       "name": "Pojazd się ładuje",
-      "description": "Sprawdza, czy którykolwiek pojazd aktualnie się ładuje."
+      "description": "Sprawdza, czy którykolwiek pojazd aktualnie się ładuje. Opcjonalnie można ograniczyć do jednego pojazdu za pomocą opcji vin lub urządzenia docelowego."
     },
     "is_plugged_in": {
       "name": "Pojazd jest podłączony",
-      "description": "Sprawdza, czy kabel ładowania któregokolwiek pojazdu jest podłączony."
+      "description": "Sprawdza, czy kabel ładowania któregokolwiek pojazdu jest podłączony. Opcjonalnie można ograniczyć do jednego pojazdu za pomocą opcji vin lub urządzenia docelowego."
     },
     "is_locked": {
       "name": "Pojazd jest zablokowany",
-      "description": "Sprawdza, czy którykolwiek pojazd jest zablokowany."
+      "description": "Sprawdza, czy którykolwiek pojazd jest zablokowany. Opcjonalnie można ograniczyć do jednego pojazdu za pomocą opcji vin lub urządzenia docelowego."
     },
     "is_preconditioning": {
       "name": "Pojazd wstępnie klimatyzuje",
-      "description": "Sprawdza, czy którykolwiek pojazd wykonuje wstępną klimatyzację."
+      "description": "Sprawdza, czy którykolwiek pojazd wykonuje wstępną klimatyzację. Opcjonalnie można ograniczyć do jednego pojazdu za pomocą opcji vin lub urządzenia docelowego."
     },
     "is_charge_target_reached": {
       "name": "Pojazd osiągnął docelowy poziom naładowania",
-      "description": "Sprawdza, czy poziom naładowania któregokolwiek pojazdu osiągnął wartość docelową lub ją przekroczył."
+      "description": "Sprawdza, czy poziom naładowania któregokolwiek pojazdu osiągnął wartość docelową lub ją przekroczył. Opcjonalnie można ograniczyć do jednego pojazdu za pomocą opcji vin lub urządzenia docelowego."
     }
   }
 }

@@ -6,9 +6,11 @@ platform registration.
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+import voluptuous as vol
 
 from custom_components.vag_connect.trigger_detect import (
     EVENT_KEYS,
@@ -161,3 +163,154 @@ def test_condition_any_vehicle_matches() -> None:
     assert cond._any_vehicle_matches(hass, "is_charging") is True
     coord.vehicles = {"V1": {"is_charging": False}}
     assert cond._any_vehicle_matches(hass, "is_charging") is False
+
+
+# ── v4.7.11 (trigger-vin-targeting) — optional per-vehicle scoping ─────────────
+
+_VIN17 = "WVWZZZ1JZ3W000001"
+
+
+def _hass_with_coord(coord: MagicMock) -> MagicMock:
+    entry = MagicMock()
+    entry.runtime_data = coord
+    hass = MagicMock()
+    hass.config_entries.async_entries.return_value = [entry]
+    return hass
+
+
+def test_resolve_target_vins_from_option() -> None:
+    from custom_components.vag_connect import trigger as trig
+    cfg = SimpleNamespace(options={"vin": "V2"}, target=None)
+    assert trig._resolve_target_vins(MagicMock(), cfg) == {"V2"}
+
+
+def test_resolve_target_vins_empty_when_unset() -> None:
+    from custom_components.vag_connect import trigger as trig
+    cfg = SimpleNamespace(options=None, target=None)
+    assert trig._resolve_target_vins(MagicMock(), cfg) == set()
+    # a differently-shaped (experimental) config degrades to "all vehicles"
+    assert trig._resolve_target_vins(MagicMock(), object()) == set()
+
+
+def test_resolve_target_vins_from_device_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    from custom_components.vag_connect import trigger as trig
+    from custom_components.vag_connect.const import DOMAIN
+    device = SimpleNamespace(
+        # the vehicle VIN + the per-entry settings device (which must be ignored)
+        identifiers={(DOMAIN, "V2"), (DOMAIN, "entry1_settings"), ("other", "x")},
+    )
+    registry = MagicMock()
+    registry.async_get.return_value = device
+    monkeypatch.setattr(trig.dr, "async_get", lambda hass: registry)
+    cfg = SimpleNamespace(options=None, target={"device_id": ["dev2"]})
+    assert trig._resolve_target_vins(MagicMock(), cfg) == {"V2"}
+    # unknown device id resolves to nothing, not an error
+    registry.async_get.return_value = None
+    assert trig._resolve_target_vins(MagicMock(), cfg) == set()
+
+
+def test_vin_option_validated_and_uppercased() -> None:
+    from custom_components.vag_connect import trigger as trig
+    # lowercase input is normalised to uppercase so it matches the coordinator's
+    # upper-cased VIN keys
+    out = asyncio.run(
+        trig.TRIGGERS["started_charging"].async_validate_config(
+            MagicMock(), {"options": {"vin": _VIN17.lower()}}
+        )
+    )
+    assert out["options"]["vin"] == _VIN17
+    # a malformed VIN is rejected at config-validation time
+    with pytest.raises(vol.Invalid):
+        asyncio.run(
+            trig.TRIGGERS["started_charging"].async_validate_config(
+                MagicMock(), {"options": {"vin": "TOOSHORT"}}
+            )
+        )
+    # no options ⇒ passthrough, byte-identical to v1
+    assert asyncio.run(
+        trig.TRIGGERS["started_charging"].async_validate_config(MagicMock(), {})
+    ) == {}
+
+
+@_needs_platform
+def test_trigger_unset_vin_fires_for_all_vehicles() -> None:
+    from custom_components.vag_connect import trigger as trig
+    det = VehicleTransitionDetector()
+    coord = MagicMock()
+    coord.register_transition_listener = det.register
+    hass = _hass_with_coord(coord)
+    cfg = SimpleNamespace(key="started_charging", options=None, target=None)
+    t = trig.TRIGGERS["started_charging"](hass, cfg)
+    fired: list[str] = []
+    asyncio.run(t.async_attach_runner(lambda payload, desc: fired.append(payload["vin"])))
+    det.feed({"V1": {"is_charging": False}, "V2": {"is_charging": False}})
+    det.feed({"V1": {"is_charging": True}, "V2": {"is_charging": True}})
+    assert sorted(fired) == ["V1", "V2"]
+
+
+@_needs_platform
+def test_trigger_vin_option_fires_only_that_vehicle() -> None:
+    from custom_components.vag_connect import trigger as trig
+    det = VehicleTransitionDetector()
+    coord = MagicMock()
+    coord.register_transition_listener = det.register
+    hass = _hass_with_coord(coord)
+    cfg = SimpleNamespace(key="started_charging", options={"vin": "V2"}, target=None)
+    t = trig.TRIGGERS["started_charging"](hass, cfg)
+    fired: list[str] = []
+    asyncio.run(t.async_attach_runner(lambda payload, desc: fired.append(payload["vin"])))
+    det.feed({"V1": {"is_charging": False}, "V2": {"is_charging": False}})
+    det.feed({"V1": {"is_charging": True}, "V2": {"is_charging": True}})
+    assert fired == ["V2"]
+
+
+@_needs_platform
+def test_trigger_device_id_fires_only_that_vehicle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from custom_components.vag_connect import trigger as trig
+    from custom_components.vag_connect.const import DOMAIN
+    device = SimpleNamespace(identifiers={(DOMAIN, "V2")})
+    registry = MagicMock()
+    registry.async_get.return_value = device
+    monkeypatch.setattr(trig.dr, "async_get", lambda hass: registry)
+    det = VehicleTransitionDetector()
+    coord = MagicMock()
+    coord.register_transition_listener = det.register
+    hass = _hass_with_coord(coord)
+    cfg = SimpleNamespace(
+        key="started_charging", options=None, target={"device_id": ["dev2"]}
+    )
+    t = trig.TRIGGERS["started_charging"](hass, cfg)
+    fired: list[str] = []
+    asyncio.run(t.async_attach_runner(lambda payload, desc: fired.append(payload["vin"])))
+    det.feed({"V1": {"is_charging": False}, "V2": {"is_charging": False}})
+    det.feed({"V1": {"is_charging": True}, "V2": {"is_charging": True}})
+    assert fired == ["V2"]
+
+
+def test_condition_vin_scopes_to_one_vehicle() -> None:
+    from custom_components.vag_connect import condition as cond
+    coord = MagicMock()
+    coord.vehicles = {"V1": {"is_charging": True}, "V2": {"is_charging": False}}
+    hass = _hass_with_coord(coord)
+    # unset ⇒ any vehicle charging (V1) matches
+    assert cond._any_vehicle_matches(hass, "is_charging") is True
+    # scoped to V2 (not charging) ⇒ no match, even though V1 is charging
+    assert cond._any_vehicle_matches(hass, "is_charging", {"V2"}) is False
+    # scoped to V1 ⇒ matches
+    assert cond._any_vehicle_matches(hass, "is_charging", {"V1"}) is True
+
+
+@_needs_platform
+def test_condition_check_honours_vin_option() -> None:
+    from custom_components.vag_connect import condition as cond
+    coord = MagicMock()
+    coord.vehicles = {"V1": {"is_charging": True}, "V2": {"is_charging": False}}
+    hass = _hass_with_coord(coord)
+    cfg = SimpleNamespace(options={"vin": "V2"}, target=None)
+    c = cond.CONDITIONS["is_charging"](hass, cfg)
+    assert c._async_check() is False   # V2 is not charging
+    cfg_all = SimpleNamespace(options=None, target=None)
+    c_all = cond.CONDITIONS["is_charging"](hass, cfg_all)
+    assert c_all._async_check() is True   # any vehicle (V1) charging

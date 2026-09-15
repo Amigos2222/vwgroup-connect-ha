@@ -42,7 +42,7 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
-## [4.7.11] - 2026-09-15 — vw.de master data that stays, and an honest look at thin portal exports
+## [4.7.11] - 2026-09-16 — Competitor parity round: vw.de master data that stays, fresher portal readings, richer timers, honest diagnostics
 
 ### Fixed
 - **vw.de: colour, model and the exterior pictures no longer vanish when the live web reads are refused.**
@@ -55,6 +55,12 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 - **vw.de debug lines now mask the VIN inside request paths.** A second pattern with the same name
   had shadowed the URL masker, so the path VIN slipped through into debug logs (the JSON-body masking
   was unaffected). Found while adding the line above.
+- **"Closures secured" no longer flips to false on a closed bonnet/tailgate.** VW's bonnet and tailgate
+  "safe state" values don't follow the door polarity (a live capture shows 3 while closed); the
+  aggregate now uses the three door fields only.
+- **Diagnostics show the vw.de channel's read outcomes.** The vw.de charging/maintenance reads record
+  their status, and the connector's outcomes are exported even before the first read — the table a
+  reporter asked for was never wired (#1313, thanks @realynot).
 
 ### Added
 - **Portal feed health shows how much of VW's export actually carries values.** VW's EU Data Act
@@ -64,6 +70,30 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   (#465, thanks @BooM80 for reproducing it in VW's own export).
 - **Scout feed: `ErrorReason`** now feeds a diagnostic *Error Reason Code* sensor (disabled by default,
   raw code, "0" = no error) (#1421, thanks @skornehl).
+- **vw.de: opt-in re-login with the stored password when the web session dies.** Off by default. When
+  the silent session resume fails and you've switched it on, the integration signs in once with your
+  stored password (at most every 15 minutes); if VW asks for an e-mail code it stops there without
+  submitting anything and the usual re-add-with-code path applies. Mirrors what the other volkswagen.de
+  project does, kept opt-in because a fresh sign-in can trigger one e-mail code (#465, #632, #966).
+- **Portal readings say how fresh they are.** Sensors fed by the EU Data Act feed carry
+  `data_captured_at`, `freshness_source` and `ambiguous_reading` attributes (the last one flags a
+  reading whose candidates disagreed under one capture time) — no per-poll churn, no new entities
+  (#465, #529, #1218).
+- **Departure timers can carry charging, climatisation, target battery % and a one-off date.** The
+  `set_departure_timer` service accepts the extra fields; they are sent on the CARIAD path only for
+  entries in the test cohort until one live capture confirms the field names, and ignored otherwise.
+- **Connected-services breakdown.** The subscription diagnostic sensor lists each connected service
+  with its expiry and status as attributes (capped), not just the earliest expiry.
+- **vw.de cars: the side/¾ render becomes the vehicle picture**, and the (static) model name and
+  render list are cached for 24 h / 6 h instead of being re-fetched every poll (#1229).
+- **Porsche: charging power on newer cars** (`chargingPowerkW`, the legacy field reads 0 on a 2026 Macan
+  Electric) and the climatiser target temperature now feed their sensors.
+- **Seven ready-made automation blueprints** — charge complete, low battery, door/window/trunk left open
+  while away, pre-heat before departure, service due, tyre-pressure warning, parking position changed —
+  under *Settings → Automations → Blueprints*; notifications were the most-requested thing across every
+  car integration's tracker, and the data was already there.
+- **Named triggers and conditions can target one car.** An optional `vin` (or the car's device) scopes
+  the experimental named triggers/conditions; unset keeps today's account-wide behaviour.
 
 ## [4.7.10] - 2026-09-14 — Portal logins that actually complete, and a refresh loop that hammered vw.de
 

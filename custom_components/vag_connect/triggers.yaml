@@ -1,7 +1,9 @@
 # Named triggers exposed by VW Group Connect (experimental, HA 2026.7+).
-# Human-readable names + descriptions live in strings.json / translations; these
-# triggers take no fields in v1 (each fires for any of the account's vehicles —
-# filter on the payload's `vin` in the automation).
+# Human-readable names + descriptions live in strings.json / translations.
+# v4.7.11 (trigger-vin-targeting): each trigger accepts an OPTIONAL `vin` option
+# (17 uppercase chars) and/or a `target:` device — set either to fire only for
+# that vehicle. Unset, the trigger fires for ANY of the account's vehicles (v1
+# behaviour) and the action can still filter on the payload's `vin`.
 started_charging:
 stopped_charging:
 plugged_in:

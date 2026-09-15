@@ -448,7 +448,18 @@ class PorscheClient:
             # chargingPower lives on CHARGING_RATE, not CHARGING_SUMMARY (real
             # capture: CHARGING_RATE={"chargingPower","chargingRate"}) — the old
             # read from CHARGING_SUMMARY never returned a value.
-            d.charging_power_kw = v(m, "CHARGING_RATE", "chargingPower")
+            #
+            # v4.7.11 (CJNE ha-porscheconnect #397) — Porsche moved the value to
+            # a new member: newer cars (Macan Electric MY2026, Taycan facelift)
+            # ship CHARGING_RATE.chargingPowerkW while chargingPower stays 0
+            # (real capture: {"chargingPower":0,"chargingPowerkW":8.7}), so our
+            # sensor read 0 kW while charging. Prefer chargingPowerkW when it is
+            # present; fall back to the legacy chargingPower for older payloads
+            # that carry only that member.
+            _charge_kw = v(m, "CHARGING_RATE", "chargingPowerkW")
+            if _charge_kw is None:
+                _charge_kw = v(m, "CHARGING_RATE", "chargingPower")
+            d.charging_power_kw = _charge_kw
             # Plug — CHARGING_SUMMARY.plugState does not exist. The real capture
             # carries a combined status enum ("CHARGING"/"NOT_PLUGGED"/…) on
             # CHARGING_SUMMARY.status; derive plug-connected from it (a BEV only
@@ -515,13 +526,30 @@ class PorscheClient:
                 d.sunroof_open = sunroof
 
             # Climate — real capture: CLIMATIZER_STATE={"isOn": bool,
-            # "targetTemperature": <Kelvin>, ...}, not a ``climatisationState``
-            # string. (targetTemperature is available for a future sensor.)
+            # "targetTemperature": <Kelvin>, "climateZonesEnabled": {...}}, not a
+            # ``climatisationState`` string.
             clim = m.get("CLIMATIZER_STATE", {})
             clim_on = v(clim, "isOn")
             if isinstance(clim_on, bool):
                 d.climatisation_active = clim_on
                 d.climatisation_state = "ON" if clim_on else "OFF"
+            # v4.7.11 (pyporscheconnectapi PR #98) — targetTemperature is Kelvin
+            # (real capture: CLIMATIZER_STATE.targetTemperature=293.15 → 20.0 °C).
+            # Was left unparsed before ("available for a future sensor"); wire it
+            # to the shared target_temperature field. Guard non-numeric (bool is
+            # an int subclass, so exclude it explicitly).
+            _target_k = v(clim, "targetTemperature")
+            if isinstance(_target_k, (int, float)) and not isinstance(_target_k, bool):
+                d.target_temperature = round(_target_k - 273.15, 1)
+            # Seat heating — NOT wired: no seat-heating levels exist in the real
+            # capture. HEATING_STATE comes back {"isEnabled": false, "cause":
+            # "NOT_SUPPORTED"} on both captured cars, HVAC_SUMMARY/HVAC_STATE
+            # carry no value, and CLIMATIZER_STATE.climateZonesEnabled is a set
+            # of climate-zone booleans, not per-seat heat levels:
+            #   "climateZonesEnabled": {"frontLeft": true, "frontRight": true,
+            #                           "rearLeft": true, "rearRight": true}
+            # Mapping those into seat_heating would invent data. Leave None until
+            # a capture surfaces real per-seat heating keys.
 
             # GPS — real capture: GPS_LOCATION={"location":"<lat>,<lng>",
             # "direction":int}, one comma-separated string, not separate
@@ -1067,11 +1095,19 @@ class PorscheClient:
         enabled: bool,
         departure_time: str | None,
         recurring_on: list[str] | None = None,  # noqa: ARG002
+        charging: bool | None = None,  # noqa: ARG002
+        climatisation: bool | None = None,  # noqa: ARG002
+        target_soc_pct: int | None = None,  # noqa: ARG002
+        one_off_day: str | None = None,  # noqa: ARG002
     ) -> None:
         # v2.0.0 (Big-Bang) — accepts ``recurring_on`` to keep the
         # cross-brand interface uniform; PPA's DEPARTURES_EDIT command
         # doesn't expose a weekday list field today, so the parameter
         # is silently ignored for Porsche.
+        # v4.7.11 (departure-timer-rich-setter) — same for charging/
+        # climatisation/target_soc_pct/one_off_day: PPA's timer command has no
+        # grounded field for them, so they're accepted (uniform interface) but
+        # ignored rather than sending guessed keys.
         payload: dict[str, Any] = {"timerId": timer_id, "enabled": enabled}
         if departure_time:
             payload["departureTime"] = departure_time

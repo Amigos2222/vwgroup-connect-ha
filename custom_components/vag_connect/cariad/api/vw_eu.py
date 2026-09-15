@@ -140,6 +140,11 @@ _BFF_OK_STATES = frozenset(
     {"successful", "succeeded", "success", "completed", "done", "finished"}
 )
 
+# v4.7.11 — cap on the per-capability connected_services breakdown so a large
+# capabilities array (scout #144 observed 54 items) can't bloat the diagnostic
+# attribute payload.
+_CONNECTED_SERVICES_CAP = 40
+
 # #909 — cooldown for a gateway-DENIED MBB operationList. The denial is an
 # enrolment/authorization verdict, so it only changes when the user fixes
 # something in the brand app; 12 h matches the positive cache's TTL and still
@@ -3070,6 +3075,10 @@ class VWEUClient(CariadBaseClient):
         enabled: bool,
         departure_time: str | None,
         recurring_on: list[str] | None = None,
+        charging: bool | None = None,
+        climatisation: bool | None = None,
+        target_soc_pct: int | None = None,
+        one_off_day: str | None = None,
     ) -> None:
         """Set a departure timer (1–3).
 
@@ -3086,6 +3095,15 @@ class VWEUClient(CariadBaseClient):
                             recurrence pattern (or one-off) is preserved.
                             Backed by CARIAD-BFF
                             ``/climatisation/timers`` ``recurringOn`` field.
+            charging:       v4.7.11 — optional, whether the timer triggers a
+                            charge. See the rich-setter note below.
+            climatisation:  v4.7.11 — optional, whether the timer preconditions
+                            the cabin. See the rich-setter note below.
+            target_soc_pct: v4.7.11 — optional target battery SoC (10–100) the
+                            timer charges to. See the rich-setter note below.
+            one_off_day:    v4.7.11 — optional ISO date ("YYYY-MM-DD"); when
+                            set, the timer fires once on that day (type
+                            ``ONE_OFF``) instead of repeating. See below.
         """
         payload: dict[str, Any] = {"id": timer_id, "enabled": enabled}
         if departure_time:
@@ -3098,6 +3116,40 @@ class VWEUClient(CariadBaseClient):
             if cleaned:
                 payload["recurringOn"] = cleaned
                 payload["type"] = "RECURRING"
+        # v4.7.11 (departure-timer-rich-setter, myskoda #631/#640) — the
+        # departure-timer DTO also carries charge/precondition enable flags, a
+        # target SoC and a ONE_OFF (dated single-shot) variant; the field names
+        # here MIRROR the documented DepartureTimerDto read shape (charging,
+        # climatisation, targetBatteryStateOfChargeInPercent, type ∈ RECURRING|
+        # ONE_OFF — see skoda.get_departure_timers). Those PUT names are INFERRED
+        # from the read side, never confirmed against live BFF write traffic, so
+        # only opted-in test-cohort entries send them — everyone else gets the
+        # exact body shipped before, byte-for-byte, so a wrong field name can
+        # never corrupt a real user's timer.
+        rich = (charging, climatisation, target_soc_pct, one_off_day)
+        if getattr(self, "_test_cohort", False):
+            if charging is not None:
+                payload["charging"] = charging
+            if climatisation is not None:
+                payload["climatisation"] = climatisation
+            if target_soc_pct is not None:
+                payload["targetBatteryStateOfChargeInPercent"] = target_soc_pct
+            if one_off_day:
+                # A dated single-shot timer, not a weekly repeat — drop any
+                # recurring marker so the two modes can't disagree in one body.
+                payload.pop("recurringOn", None)
+                payload["type"] = "ONE_OFF"
+                payload["singleTimer"] = {"startDateTime": one_off_day}
+        elif any(x is not None for x in rich) and not getattr(
+            self, "_dt_rich_ignored_logged", False
+        ):
+            # Log once: no VIN/URL (privacy) — just why the extras were dropped.
+            self._dt_rich_ignored_logged = True
+            _LOGGER.debug(
+                "set_departure_timer: charging/climatisation/target-SoC/one-off "
+                "fields ignored — opt into the test cohort to send them (the BFF "
+                "write field names are still being verified)."
+            )
         await self._post(
             f"{self._base_for_vin(vin)}/vehicle/v1/vehicles/{vin}/climatisation/timers",
             json=payload,
@@ -4535,9 +4587,34 @@ class VWEUClient(CariadBaseClient):
             # capabilities array has no expiry leaves anywhere → field
             # stays None → phantom-protected sensors never created.
             cap_earliest: str | None = None
+            connected_services: list[dict[str, Any]] = []
             for cap in caps:
                 if not isinstance(cap, dict):
                     continue
+                # v4.7.11 (mirrors audi_connect_ha #854, merged 2026-09-14):
+                # collect a compact per-capability {id, expires_at, status} row so
+                # a user can see WHICH connected service is expiring or errored,
+                # not just the earliest-wins aggregate below. Collected for EVERY
+                # cap (entitled or not — an errored/lapsed cap is exactly what a
+                # user wants to spot here), so it sits BEFORE the entitlement/
+                # expiry skips that guard the aggregate. Capped to keep the
+                # attribute payload sane.
+                if len(connected_services) < _CONNECTED_SERVICES_CAP:
+                    cap_id = cap.get("id")
+                    if isinstance(cap_id, str) and cap_id:
+                        _svc_exp = (
+                            cap.get("expirationDate")
+                            or cap.get("validUntil")
+                            or cap.get("expiresAt")
+                        )
+                        connected_services.append({
+                            "id": cap_id,
+                            "expires_at": (
+                                _svc_exp if isinstance(_svc_exp, str) and _svc_exp
+                                else None
+                            ),
+                            "status": cap.get("status"),
+                        })
                 # v2.20.0 (#S6 license bug) — only ENTITLED capabilities count
                 # toward the subscription expiry. CARIAD ships already-lapsed
                 # ancillary caps (non-empty status: LicenseExpired / MissingLicense
@@ -4589,6 +4666,11 @@ class VWEUClient(CariadBaseClient):
                     # Leave subscription_active at None — don't false-
                     # alarm perpetual users on a parse blip.
                     pass
+
+            # v4.7.11 — surface the per-capability breakdown collected above
+            # (only when at least one cap carried an id).
+            if connected_services:
+                d.connected_services = connected_services
 
         # v2.7.0b11 — windowHeatingStatus ships under different shapes
         # depending on brand / firmware. Try canonical nested name,

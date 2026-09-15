@@ -74,6 +74,10 @@ _NON_ENTITLED_SERVICE_STATUS: frozenset[str] = frozenset(
     }
 )
 
+# v4.7.11 — cap on the per-service connected_services breakdown so a large
+# ``mycar.services`` map can't bloat the diagnostic attribute payload.
+_CONNECTED_SERVICES_CAP = 40
+
 
 class SeatCupraClient(CariadBaseClient):
     """SEAT/CUPRA API client.
@@ -932,9 +936,36 @@ class SeatCupraClient(CariadBaseClient):
             services = v(mycar, "services")
             if isinstance(services, dict):
                 earliest: str | None = None
+                connected_services: list[dict[str, Any]] = []
                 for svc_name, svc_data in services.items():
                     if not isinstance(svc_data, dict):
                         continue
+                    # v4.7.11 (mirrors audi_connect_ha #854, merged 2026-09-14):
+                    # collect a compact per-service {id, expires_at, status} row so
+                    # a user sees WHICH connected service is expiring or errored,
+                    # not just the earliest-wins aggregate below. Collected for
+                    # EVERY service (entitled or not — an errored/lapsed service is
+                    # exactly what a user wants to spot here), so it sits BEFORE the
+                    # entitlement/expiry skips that guard the aggregate. Capped.
+                    if len(connected_services) < _CONNECTED_SERVICES_CAP and isinstance(
+                        svc_name, str
+                    ) and svc_name:
+                        _svc_status = svc_data.get("serviceStatus") or svc_data.get(
+                            "status"
+                        )
+                        _svc_exp = (
+                            svc_data.get("expirationDate")
+                            or svc_data.get("validUntil")
+                            or svc_data.get("expiresAt")
+                        )
+                        connected_services.append({
+                            "id": svc_name,
+                            "expires_at": (
+                                _svc_exp if isinstance(_svc_exp, str) and _svc_exp
+                                else None
+                            ),
+                            "status": _svc_status,
+                        })
                     # v2.20.0 (#S6 license-bug parity) — only ENTITLED
                     # services count toward earliest-expiry. A lapsed
                     # service keeps its old expiry in the past; without
@@ -1013,6 +1044,10 @@ class SeatCupraClient(CariadBaseClient):
                             "%s — leaving as None (raw_exc=%s)",
                             earliest, exc,
                         )
+                # v4.7.11 — surface the per-service breakdown collected above
+                # (only when at least one service carried a name).
+                if connected_services:
+                    d.connected_services = connected_services
 
             # v2.2.0 PR #18/20 (Scout #232 — matthias0304 2026-05-16) —
             # CUPRA PHEV companion to Skoda Scout #220. OLA mycar

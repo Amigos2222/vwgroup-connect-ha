@@ -1,0 +1,113 @@
+# Copyright 2026 Prash Balan (@its-me-prash) — GNU AGPL v3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# v4.7.11 — Blueprint library (notifications = the top competitor-tracker
+# demand): remind me before the next service is due, by days or by distance.
+#
+# Two independent triggers, either of which is enough: the "days until service"
+# sensor falling below N, or the "kilometres to service" sensor falling below M.
+# Both values only ever tick downward (days each night, km as you drive), so a
+# numeric_state "below" edge is the natural, no-spam signal — it fires once on
+# the crossing rather than repeatedly.
+blueprint:
+  name: "Service due — notify"
+  description: >
+    Notify your phone when this car's next service gets close — either within a
+    number of days, or within a number of kilometres, whichever comes first.
+    Pick the car's service sensors (sensor.*_service_due_in_days and
+    sensor.*_service_km); leave a threshold high if you only care about the
+    other one.
+
+
+    Point the notify field at your phone's mobile_app notify service (e.g.
+    notify.mobile_app_iphone), with or without the "notify." prefix.
+  domain: automation
+  author: VW Group Connect (@its-me-prash)
+  input:
+    days_sensor:
+      name: "Days-to-service sensor"
+      description: "The vehicle's sensor.*_service_due_in_days."
+      selector:
+        entity:
+          filter:
+            - integration: vag_connect
+              domain: sensor
+    km_sensor:
+      name: "Distance-to-service sensor"
+      description: "The vehicle's sensor.*_service_km (distance until service)."
+      selector:
+        entity:
+          filter:
+            - integration: vag_connect
+              domain: sensor
+              device_class: distance
+    days_threshold:
+      name: "Notify within (days)"
+      description: "Notify when days-to-service drops below this."
+      default: 30
+      selector:
+        number:
+          min: 1
+          max: 180
+          step: 1
+          unit_of_measurement: "d"
+          mode: slider
+    km_threshold:
+      name: "Notify within (km)"
+      description: "Notify when distance-to-service drops below this."
+      default: 1500
+      selector:
+        number:
+          min: 100
+          max: 20000
+          step: 100
+          unit_of_measurement: "km"
+    notify_service:
+      name: "Mobile notify service"
+      description: >
+        Your phone's notify service, e.g. notify.mobile_app_iphone. With or
+        without the "notify." prefix.
+      selector:
+        text:
+    car_name:
+      name: "Car name"
+      description: "Shown in the notification, e.g. \"ID.4\"."
+      default: "Car"
+      selector:
+        text:
+
+mode: single
+max_exceeded: silent
+
+trigger:
+  - platform: numeric_state
+    entity_id: !input days_sensor
+    below: !input days_threshold
+    id: days
+  - platform: numeric_state
+    entity_id: !input km_sensor
+    below: !input km_threshold
+    id: km
+
+variables:
+  days_sensor: !input days_sensor
+  km_sensor: !input km_sensor
+  notify_service: !input notify_service
+  car_name: !input car_name
+  svc: "{{ (notify_service | default('', true)) | replace('notify.', '') }}"
+  days_left: "{{ states(days_sensor) | int(-1) }}"
+  km_left: "{{ states(km_sensor) | int(-1) }}"
+
+action:
+  - service: "notify.{{ svc }}"
+    data:
+      title: "{{ car_name }} — service due"
+      message: >
+        {% if trigger.id == 'days' %}
+        {{ car_name }} service is due in {{ days_left }} day(s).
+        {% else %}
+        {{ car_name }} service is due in {{ km_left }} km.
+        {% endif %}
+      data:
+        tag: "vagc_service_due_{{ car_name | slugify }}"
+        notification_icon: "mdi:wrench-clock"

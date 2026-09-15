@@ -259,6 +259,7 @@
           "keep_raw_datasets": "Behold rå EU Data Act-datasett (diagnostikk)",
           "auto_utility_meters": "Opprett månedlige målere automatisk (ladet energi, kilometerstand)",
           "test_cohort": "Hjelp oss å forbedre VW Group Connect (frivillig testgruppe)",
+          "vwde_cred_relogin": "Volkswagen.de: logg inn på nytt med det lagrede passordet når nettøkten utløper",
           "vweu_device_grant": "Legg til VW EU Two-Way — kommandoer + sanntidsavlesninger (BETA)",
           "remove_vweu_twoway": "Fjern VW EU Two-Way (gå tilbake til forrige kanal)",
           "companion_read_vehicle_health": "Companion: les kilometerstand og service fra kjøretøysjekk (navigerer i appen)",
@@ -287,6 +288,7 @@
           "keep_raw_datasets": "Bare nyttig på EU Data Act-portalkanalen. Når det er på, lagres de siste rå datasett-ZIP-filene portalen leverer på disk (under .storage, per kjøretøy og med en størrelsesgrense), slik at en feil eller manglende verdi kan gjenskapes fra nøyaktig de bytene bilen din sendte. Disse filene inneholder GPS-posisjon, VIN og telemetri, så det er av som standard – slå det på bare under feilsøking.",
           "auto_utility_meters": "Av som standard. Når den er på, oppretter integrasjonen Home Assistant utility_meter-hjelpere som summerer ladet energi og kilometerstand per kalendermåned, én per kjøretøy. Bryteren vises bare når en matchende kildesensor allerede finnes. Dette er permanente hjelpere: å slå det av igjen stopper at nye opprettes, men sletter ikke de som allerede er laget – fjern dem under Innstillinger → Enheter og tjenester → Hjelpere.",
           "test_cohort": "Avslått som standard. Slå den på for å la integrasjonen prøve eksperimentelle avlesninger fra bilen din — for eksempel det pågående forsøket på å hente GPS-posisjon for Volkswagen-biler i EU — og av og til vise et varsel du kan lukke, der du blir bedt om å dele en diagnostikkfil så en ny funksjon kan bekreftes for modellen din. Alt som deles blir automatisk sladdet før det forlater systemet ditt: verken VIN, GPS, tokens eller e-post er noen gang med. Det er slik nye funksjoner låses opp for bilen din og for alle andre som kjører samme modell, og du kan slå det av igjen når som helst.",
+          "vwde_cred_relogin": "Av som standard. Påvirker bare Volkswagen.de-lesekanalen. Når den stille gjenopptakingen av økten mislykkes, logger integrasjonen inn på nytt med passordet du allerede har lagret i stedet for å be deg om å legge til kanalen på nytt. Dette kan få Volkswagen til å sende høyst én e-postkode hvert 15. minutt; hvis en kode kreves, kan den ikke oppgis automatisk, og du blir bedt om å legge til kanalen på nytt.",
           "vweu_device_grant": "Kun Volkswagen, BETA. Legger til toveisstyring (lås/lås opp, klima, lading) og sanntidsavlesninger fra CARIAD ved at du logger inn med Volkswagen ID-en din. Volkswagen utsteder bare et token som er gyldig i én time her, så passordet ditt lagres for å fornye det automatisk — det sendes kun til Volkswagens egen påloggingsserver og skrives aldri til logger eller diagnostikk. Vil du helst ikke lagre et passord, kan du bruke de skrivebeskyttede kanalene i stedet. Krysser du av her, åpnes påloggingssteget."
         }
       },
@@ -2397,61 +2399,61 @@
   "triggers": {
     "started_charging": {
       "name": "Kjøretøyet startet lading",
-      "description": "Utløses når et kjøretøy begynner å lade."
+      "description": "Utløses når et kjøretøy begynner å lade. Kan eventuelt avgrenses til étt kjøretøy med vin-valget eller en målenhet."
     },
     "stopped_charging": {
       "name": "Kjøretøyet stoppet lading",
-      "description": "Utløses når et kjøretøy slutter å lade."
+      "description": "Utløses når et kjøretøy slutter å lade. Kan eventuelt avgrenses til étt kjøretøy med vin-valget eller en målenhet."
     },
     "plugged_in": {
       "name": "Kjøretøy tilkoblet",
-      "description": "Utløses når et kjøretøys ladekabel kobles til."
+      "description": "Utløses når et kjøretøys ladekabel kobles til. Kan eventuelt avgrenses til étt kjøretøy med vin-valget eller en målenhet."
     },
     "unplugged": {
       "name": "Kjøretøy frakoblet",
-      "description": "Utløses når et kjøretøys ladekabel kobles fra."
+      "description": "Utløses når et kjøretøys ladekabel kobles fra. Kan eventuelt avgrenses til étt kjøretøy med vin-valget eller en målenhet."
     },
     "locked": {
       "name": "Kjøretøy låst",
-      "description": "Utløses når et kjøretøy blir låst."
+      "description": "Utløses når et kjøretøy blir låst. Kan eventuelt avgrenses til étt kjøretøy med vin-valget eller en målenhet."
     },
     "unlocked": {
       "name": "Kjøretøy låst opp",
-      "description": "Utløses når et kjøretøy blir låst opp."
+      "description": "Utløses når et kjøretøy blir låst opp. Kan eventuelt avgrenses til étt kjøretøy med vin-valget eller en målenhet."
     },
     "started_preconditioning": {
       "name": "Kjøretøyet startet forhåndsklimatisering",
-      "description": "Utløses når et kjøretøy starter forhåndsklimatisering."
+      "description": "Utløses når et kjøretøy starter forhåndsklimatisering. Kan eventuelt avgrenses til étt kjøretøy med vin-valget eller en målenhet."
     },
     "stopped_preconditioning": {
       "name": "Kjøretøyet stoppet forhåndsklimatisering",
-      "description": "Utløses når et kjøretøy stopper forhåndsklimatisering."
+      "description": "Utløses når et kjøretøy stopper forhåndsklimatisering. Kan eventuelt avgrenses til étt kjøretøy med vin-valget eller en målenhet."
     },
     "charge_target_reached": {
       "name": "Kjøretøyet nådde lademålet",
-      "description": "Utløses når et kjøretøys ladenivå når målet sitt."
+      "description": "Utløses når et kjøretøys ladenivå når målet sitt. Kan eventuelt avgrenses til étt kjøretøy med vin-valget eller en målenhet."
     }
   },
   "conditions": {
     "is_charging": {
       "name": "Et kjøretøy lader",
-      "description": "Sjekker om et kjøretøy lader akkurat nå."
+      "description": "Sjekker om et kjøretøy lader akkurat nå. Kan eventuelt avgrenses til étt kjøretøy med vin-valget eller en målenhet."
     },
     "is_plugged_in": {
       "name": "Et kjøretøy er tilkoblet",
-      "description": "Sjekker om et kjøretøys ladekabel er tilkoblet."
+      "description": "Sjekker om et kjøretøys ladekabel er tilkoblet. Kan eventuelt avgrenses til étt kjøretøy med vin-valget eller en målenhet."
     },
     "is_locked": {
       "name": "Et kjøretøy er låst",
-      "description": "Sjekker om et kjøretøy er låst."
+      "description": "Sjekker om et kjøretøy er låst. Kan eventuelt avgrenses til étt kjøretøy med vin-valget eller en målenhet."
     },
     "is_preconditioning": {
       "name": "Et kjøretøy forhåndsklimatiserer",
-      "description": "Sjekker om et kjøretøy kjører forhåndsklimatisering."
+      "description": "Sjekker om et kjøretøy kjører forhåndsklimatisering. Kan eventuelt avgrenses til étt kjøretøy med vin-valget eller en målenhet."
     },
     "is_charge_target_reached": {
       "name": "Et kjøretøy nådde lademålet",
-      "description": "Sjekker om et kjøretøys ladenivå er på eller over målet."
+      "description": "Sjekker om et kjøretøys ladenivå er på eller over målet. Kan eventuelt avgrenses til étt kjøretøy med vin-valget eller en målenhet."
     }
   }
 }

@@ -1,0 +1,123 @@
+# Copyright 2026 Prash Balan (@its-me-prash) — GNU AGPL v3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# v4.7.11 — Blueprint library: notifications are the #1 requested feature across
+# every competitor tracker, and we shipped only two blueprints. This adds the
+# most-asked one: tell me when the car is done charging.
+#
+# Fires when the charging binary sensor turns OFF (session ended) OR when the
+# battery state-of-charge climbs to/above a threshold you set. The threshold
+# path is gated on the car still charging so a stray reading while parked can't
+# spam you. Pick your phone's notify service (mobile_app) as the target.
+blueprint:
+  name: "Charge complete — notify"
+  description: >
+    Send a notification to your phone when this car finishes charging — either
+    when the charging sensor switches off, or when the battery reaches a
+    percentage you choose (whichever happens first). Uses entities you pick, so
+    it works for any brand this integration supports.
+
+
+    Point the notify field at your phone's mobile_app notify service (e.g.
+    notify.mobile_app_iphone). You can type it with or without the "notify."
+    prefix.
+  domain: automation
+  author: VW Group Connect (@its-me-prash)
+  input:
+    charging_sensor:
+      name: "Charging sensor"
+      description: >
+        The vehicle's charging binary sensor (binary_sensor.*_is_charging).
+      selector:
+        entity:
+          filter:
+            - integration: vag_connect
+              domain: binary_sensor
+              device_class: battery_charging
+    battery_sensor:
+      name: "Battery level sensor"
+      description: >
+        The vehicle's battery-level sensor (sensor.*_battery), used for the
+        threshold and for the "NN%" text in the message.
+      selector:
+        entity:
+          filter:
+            - integration: vag_connect
+              domain: sensor
+              device_class: battery
+    target_level:
+      name: "Notify at battery level (%)"
+      description: >
+        Also notify as soon as the battery reaches this level while charging.
+        Set to 100 to only notify when charging actually stops.
+      default: 80
+      selector:
+        number:
+          min: 50
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+          mode: slider
+    notify_service:
+      name: "Mobile notify service"
+      description: >
+        Your phone's notify service, e.g. notify.mobile_app_iphone. With or
+        without the "notify." prefix.
+      selector:
+        text:
+    car_name:
+      name: "Car name"
+      description: "Shown in the notification, e.g. \"ID.4\"."
+      default: "Car"
+      selector:
+        text:
+
+# single: one notification per event is enough; a burst of sensor updates
+# shouldn't queue duplicates.
+mode: single
+max_exceeded: silent
+
+trigger:
+  # Charging actually stopped.
+  - platform: state
+    entity_id: !input charging_sensor
+    to: "off"
+    id: stopped
+  # Battery reached the chosen level (rising edge).
+  - platform: numeric_state
+    entity_id: !input battery_sensor
+    above: !input target_level
+    id: reached
+
+variables:
+  charging_sensor: !input charging_sensor
+  battery_sensor: !input battery_sensor
+  target_level: !input target_level
+  notify_service: !input notify_service
+  car_name: !input car_name
+  # Accept the service typed with or without the "notify." prefix.
+  svc: "{{ (notify_service | default('', true)) | replace('notify.', '') }}"
+  soc: "{{ states(battery_sensor) | int(0) }}"
+
+condition:
+  # For the threshold trigger, only notify if the car is genuinely charging —
+  # otherwise a parked car sitting above the level would fire on every wake.
+  # The "stopped" trigger is exempt (the car just switched off by definition).
+  - condition: template
+    value_template: >
+      {{ trigger.id == 'stopped'
+         or is_state(charging_sensor, 'on') }}
+
+action:
+  - service: "notify.{{ svc }}"
+    data:
+      title: "{{ car_name }} — charging"
+      message: >
+        {% if trigger.id == 'stopped' %}
+        {{ car_name }} has finished charging at {{ soc }}%.
+        {% else %}
+        {{ car_name }} reached {{ soc }}% — charge target hit.
+        {% endif %}
+      data:
+        tag: "vagc_charge_done_{{ car_name | slugify }}"
+        notification_icon: "mdi:battery-charging-100"

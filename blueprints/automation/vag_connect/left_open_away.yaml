@@ -1,0 +1,123 @@
+# Copyright 2026 Prash Balan (@its-me-prash) — GNU AGPL v3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# v4.7.11 — Blueprint library (notifications = top competitor-tracker demand):
+# warn me if a door, window or the trunk is left open while the car is away
+# from home. Classic "did I close everything?" peace-of-mind alert.
+#
+# Two ways in, both gated so you only get pinged when it matters: something has
+# been open for N minutes while the car's tracker is away, OR the car has been
+# away for N minutes with something still open. The device_tracker "not_home"
+# check is what keeps this quiet while the car sits at home with a window down.
+blueprint:
+  name: "Left open while away — notify"
+  description: >
+    Notify your phone if one of this car's doors, windows or the trunk stays
+    open while the car is away from home for a while. Pick the opening sensors
+    you care about (you can select several) and the car's device tracker.
+
+
+    Point the notify field at your phone's mobile_app notify service (e.g.
+    notify.mobile_app_iphone), with or without the "notify." prefix.
+  domain: automation
+  author: VW Group Connect (@its-me-prash)
+  input:
+    opening_sensors:
+      name: "Door / window / trunk sensors"
+      description: >
+        The opening sensors to watch — e.g. binary_sensor.*_doors_open,
+        *_windows_open, *_trunk_open. Select as many as you like.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - integration: vag_connect
+              domain: binary_sensor
+              device_class: door
+            - integration: vag_connect
+              domain: binary_sensor
+              device_class: window
+    device_tracker:
+      name: "Car location tracker"
+      description: "The vehicle's device tracker (device_tracker.*)."
+      selector:
+        entity:
+          filter:
+            - integration: vag_connect
+              domain: device_tracker
+    away_minutes:
+      name: "Grace period (minutes)"
+      description: >
+        How long something must stay open while away before you're notified.
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 120
+          step: 1
+          unit_of_measurement: "min"
+    notify_service:
+      name: "Mobile notify service"
+      description: >
+        Your phone's notify service, e.g. notify.mobile_app_iphone. With or
+        without the "notify." prefix.
+      selector:
+        text:
+    car_name:
+      name: "Car name"
+      description: "Shown in the notification, e.g. \"ID.4\"."
+      default: "Car"
+      selector:
+        text:
+
+mode: single
+max_exceeded: silent
+
+trigger:
+  # Something opened (or stayed open) long enough while away.
+  - platform: state
+    entity_id: !input opening_sensors
+    to: "on"
+    for:
+      minutes: !input away_minutes
+    id: opened
+  # The car has been away long enough — re-check whether anything is still open.
+  - platform: state
+    entity_id: !input device_tracker
+    to: "not_home"
+    for:
+      minutes: !input away_minutes
+    id: left
+
+variables:
+  opening_sensors: !input opening_sensors
+  device_tracker: !input device_tracker
+  notify_service: !input notify_service
+  car_name: !input car_name
+  svc: "{{ (notify_service | default('', true)) | replace('notify.', '') }}"
+  # Human-readable list of what's currently open (friendly names).
+  open_names: >
+    {{ expand(opening_sensors)
+       | selectattr('state', 'eq', 'on')
+       | map(attribute='name') | list | join(', ') }}
+
+condition:
+  # Only alert when the car is genuinely away from home...
+  - condition: state
+    entity_id: !input device_tracker
+    state: "not_home"
+  # ...and something is actually still open right now.
+  - condition: template
+    value_template: >
+      {{ expand(opening_sensors)
+         | selectattr('state', 'eq', 'on') | list | count > 0 }}
+
+action:
+  - service: "notify.{{ svc }}"
+    data:
+      title: "{{ car_name }} — left open"
+      message: >
+        {{ car_name }} is away from home with open: {{ open_names }}.
+      data:
+        tag: "vagc_left_open_{{ car_name | slugify }}"
+        notification_icon: "mdi:car-door"
