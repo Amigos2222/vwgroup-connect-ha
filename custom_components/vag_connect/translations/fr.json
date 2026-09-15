@@ -928,6 +928,9 @@
       "data_error_detail": {
         "name": "Erreur de données"
       },
+      "error_reason": {
+        "name": "Code de motif d'erreur"
+      },
       "external_power_supply_state": {
         "name": "Alimentation externe"
       },

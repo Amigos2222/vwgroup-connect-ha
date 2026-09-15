@@ -439,6 +439,36 @@ def _portal_no_data_reason(client: Any) -> str | None:
     return reason or None
 
 
+def _portal_field_delivery(client: Any) -> dict[str, Any] | None:
+    """The EU-Data-Act portal's last value/value-less field split, or None.
+
+    #465 (BooM80) — VW's export can ship a field's NAME + capture timestamp but
+    omit the ``value`` (BooM80's official export: 10 names, only 3 valued), so a
+    thin feed looks "complete". The connector records the last parse's split;
+    surfacing it here makes a "most sensors are empty" report self-diagnosing
+    (VW delivered nothing vs we dropped it) without a debug-log round-trip. Bare
+    field names + counts — no PII (envelope-noise + credential names already
+    excluded by the walker). Resolves the portal exactly like
+    ``_portal_no_data_reason``; ``getattr`` guards keep older clients export-safe.
+    """
+    if client is None:
+        return None
+    portal = (
+        getattr(client, "_eu_portal", None)
+        or getattr(client, "_supplementary_eu_portal", None)
+    )
+    if portal is None:
+        return None
+    valueless = getattr(portal, "last_valueless_fields", None)
+    return {
+        "fields_with_values": getattr(portal, "last_valued_count", None),
+        "fields_delivered_without_values": getattr(
+            portal, "last_valueless_count", None
+        ),
+        "valueless_field_names": list(valueless) if valueless else [],
+    }
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -643,6 +673,7 @@ async def async_get_config_entry_diagnostics(
         "vehicle_count": len(coordinator.vehicles),
         "last_update_success": coordinator.last_update_success,
         "portal_no_data_reason": _portal_no_data_reason(client),
+        "portal_field_delivery": _portal_field_delivery(client),
         "cloud_push_active": coordinator.cloud_push_active,
         "push_states": coordinator.push_states,
         "push_last_errors": coordinator.push_last_errors,

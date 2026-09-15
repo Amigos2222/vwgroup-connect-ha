@@ -961,6 +961,9 @@
       "data_error_detail": {
         "name": "Data error"
       },
+      "error_reason": {
+        "name": "Error Reason Code"
+      },
       "external_power_supply_state": {
         "name": "External power supply"
       },

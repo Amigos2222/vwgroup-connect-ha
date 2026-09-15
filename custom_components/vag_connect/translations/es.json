@@ -928,6 +928,9 @@
       "data_error_detail": {
         "name": "Error de datos"
       },
+      "error_reason": {
+        "name": "Código de motivo de error"
+      },
       "external_power_supply_state": {
         "name": "Suministro externo"
       },

@@ -1224,7 +1224,16 @@ class VagSourceConnectivitySensor(VagConnectEntity, BinarySensorEntity):
             attrs["total_entities"] = s.get("total_values")
         if s.get("last_active"):
             attrs["last_active"] = s.get("last_active")
-        for k in ("portal_health", "minutes_since_last_snapshot"):
+        # #465 (BooM80) — the value/value-less split rides on the eu_data_act
+        # status entry alongside portal_health; surface it so a user can see the
+        # feed is thin because VW delivered names without values, not a bug.
+        for k in (
+            "portal_health",
+            "minutes_since_last_snapshot",
+            "fields_with_values",
+            "fields_delivered_without_values",
+            "valueless_field_names",
+        ):
             if s.get(k) is not None:
                 attrs[k] = s.get(k)
         return attrs

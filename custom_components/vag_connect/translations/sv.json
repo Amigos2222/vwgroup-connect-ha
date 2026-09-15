@@ -928,6 +928,9 @@
       "data_error_detail": {
         "name": "Datafel"
       },
+      "error_reason": {
+        "name": "Felorsakskod"
+      },
       "external_power_supply_state": {
         "name": "Extern strömförsörjning"
       },

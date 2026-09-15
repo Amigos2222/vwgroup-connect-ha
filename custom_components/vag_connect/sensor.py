@@ -2523,6 +2523,17 @@ SENSOR_DESCRIPTIONS: tuple[VagSensorDescription, ...] = (
         icon="mdi:alert-circle-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
+    # v4.7.11 (#1421 Scout) — raw EU-Data-Act "ErrorReason" code. Portal-only,
+    # so gated via _DATA_PRESENT_REQUIRED (no phantom on non-portal cars);
+    # off by default (niche diagnostic, no condition — cluster is "All Data").
+    VagSensorDescription(
+        key="error_reason",
+        translation_key="error_reason",
+        data_key="error_reason",
+        icon="mdi:alert-circle-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+    ),
     # v2.15.2 — EU Data Act portal "charger detail" fields (#513 Scout).
     VagSensorDescription(
         key="external_power_supply_state",
@@ -3956,6 +3967,7 @@ _DATA_PRESENT_REQUIRED: frozenset[str] = frozenset({
     "instrument_cluster_time",
     "hv_battery_state",
     "data_error_detail",
+    "error_reason",  # v4.7.11 (#1421) — portal-only, gate to avoid phantom entity
     # v2.15.2 — EU Data Act portal "charger detail" fields (#513 Scout).
     "external_power_supply_state",
     "charging_reason",

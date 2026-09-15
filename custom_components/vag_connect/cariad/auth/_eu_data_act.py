@@ -182,6 +182,12 @@ _PORTAL_RETRY_DELAYS = (3.0, 6.0)  # backoff (s) before giving up on a soft call
 # every file 5xxs cannot turn one poll into many hammering requests.
 _MAX_DATASET_FALLBACK = 3
 
+# v4.7.11 (#465 BooM80) — cap the value-less-field sample surfaced on the
+# connector/diagnostics. The full distinct count is kept separately; the list is
+# a sorted, bounded sample so a partial export (dozens of empty names) can't bloat
+# the state attributes / diagnostics payload.
+_VALUELESS_FIELD_CAP = 40
+
 
 def _request_start_date(meta: Any, identifier: str) -> str | None:
     """ISO ``StartDate`` of the metadata descriptor whose Identifier matches
@@ -911,6 +917,7 @@ def _walk_fields(
     _syn_out: dict[str, set[str]] | None = None,
     _contested_out: dict[str, set[str]] | None = None,
     _uuid_out: dict[str, set[str]] | None = None,
+    _delivery_out: dict[str, set[str]] | None = None,
 ) -> dict[str, str]:
     """Flatten the EU Data Act dataset into ``{field_name: value}``.
 
@@ -974,6 +981,15 @@ def _walk_fields(
     that merely share a leaf name (e.g. ``battery_state_report.soc`` vs
     ``front_left_tyre.soc``) are NEVER synonyms and can never cross-collapse — even
     if their values happen to be equal.
+
+    ``_delivery_out`` (optional, #465 BooM80): if a dict is passed, it is filled
+    with the distinct ``dataFieldName``s VW actually delivered a value for
+    (``"valued"``) vs those it shipped with a capture timestamp but NO ``value``
+    (``"valueless"``). VW's EU-DA export can ship a field's NAME + when but omit
+    the reading (BooM80's official export: 10 names, only 3 valued), so the raw
+    feed looks "complete" while most fields carry nothing. Read-only visibility —
+    a value-less point is still not surfaced (there is nothing to surface).
+    Envelope-noise + credential names are excluded from both sets.
     """
     # name -> (value_str, ts, ts_real, ts_inherited); ts_real distinguishes a
     # genuine per-point timestamp from the inherited dataset-level floor
@@ -1073,12 +1089,14 @@ def _walk_fields(
     ) -> None:
         if isinstance(node, dict):
             ts, ts_real, ts_inh = node_ts, node_ts_real, node_ts_inherited
+            own_ts = False  # #465: node carried its OWN sibling timestamp key
             for tk in _TS_KEYS:
                 if tk in node:
                     parsed = _parse_ts(node[tk])
                     if parsed is not None:
                         # OWN per-point timestamp — reliable, NOT inherited (#465).
                         ts, ts_real, ts_inh = parsed, True, False
+                        own_ts = True
                         break
             # data-point shape: {dataFieldName|name: X, value: Y}
             fname = node.get("dataFieldName") or node.get("name")
@@ -1096,6 +1114,25 @@ def _walk_fields(
                 and _sc_key.strip().lower() in _CHARGE_START_SOC_UUIDS
             ):
                 fname = "battery_state_report.soc_at_charge_start"
+            # v4.7.11 (#465 BooM80) — field-delivery honesty. Classify this data
+            # point on ONE axis so diagnostics can read "N of M": a point VW
+            # shipped a value for is "valued"; one it delivered with its OWN
+            # capture timestamp but no ``value`` is "valueless" — a name VW sent
+            # empty (BooM80's official export: 10 names, 3 valued) that otherwise
+            # vanished here silently and made a thin feed look complete. Require
+            # own_ts (not merely an inherited floor) so a plain nested container
+            # that happens to carry a ``name`` is not miscounted. Distinct names;
+            # envelope-noise + credential names excluded from both sets.
+            if (
+                _delivery_out is not None
+                and isinstance(fname, str) and fname.strip()
+                and not _is_envelope_noise(fname)
+                and fname.rsplit(".", 1)[-1] not in _CREDENTIAL_FIELDS
+            ):
+                if "value" in node:
+                    _delivery_out.setdefault("valued", set()).add(fname.strip())
+                elif own_ts:
+                    _delivery_out.setdefault("valueless", set()).add(fname.strip())
             if fname is not None and "value" in node:
                 add(fname, node.get("value"), ts, ts_real, ts_inh)
                 # v2.17.4/v2.17.5 — when the leaf name is a GENERIC token, also key
@@ -3142,6 +3179,17 @@ def map_dataset_to_vehicle_data(
         if _cerrs and _cerrs != "#0" and _cerrn != 0:
             d.charging_error_code = _cerrs
 
+    # v4.7.11 (#1421 @skornehl) — "ErrorReason" (single dict UUID b477dd84,
+    # cluster "All Data"). Dict documents no enum → surface the RAW code; drop
+    # the "0"/"0.0"/"#0" no-error sentinels the same way charging_error_code
+    # does, so the sensor reads unavailable instead of a bogus "0".
+    _ereason = first("ErrorReason")
+    if _ereason is not None:
+        _ereasons = str(_ereason).strip()
+        _ereasonn = _to_float(_ereasons)
+        if _ereasons and _ereasons != "#0" and _ereasonn != 0:
+            d.error_reason = _ereasons
+
     # #923 — 'unsupported' is a no-reading sentinel here (a real value is a
     # minutes count); drop it so the target-SoC time sensor reads unavailable
     # rather than the literal word. Non-string values pass through untouched.
@@ -3850,6 +3898,17 @@ class EUDataActConnector:
         self.last_no_data_at: str | None = None
         self.no_data_count: int = 0
         self.last_snapshot_at: str | None = None
+        # v4.7.11 (#465 BooM80) — last dataset's field-delivery honesty. VW's
+        # EU-DA export can ship a data point's NAME + capture timestamp but omit
+        # the ``value`` (BooM80's official export: 10 names, only 3 valued), so
+        # the raw feed reads "complete" while most fields carry nothing. Reset
+        # per parse in get_vehicle_data. ``last_valued_count`` /
+        # ``last_valueless_count`` are the full distinct totals (the "N of M"
+        # ratio); ``last_valueless_fields`` is a sorted, capped sample of the
+        # empty names for triage. Read-only observability, no behaviour change.
+        self.last_valued_count: int = 0
+        self.last_valueless_count: int = 0
+        self.last_valueless_fields: list[str] = []
 
     @staticmethod
     def _now_iso() -> str:
@@ -3872,6 +3931,22 @@ class EUDataActConnector:
         """Record a successful dataset poll: clear the reason, stamp the snapshot."""
         self.last_no_data_reason = ""
         self.last_snapshot_at = self._now_iso()
+
+    def _record_field_delivery(self, delivery: dict[str, set[str]]) -> None:
+        """Reset + store the last dataset's field-delivery honesty (#465 BooM80).
+
+        ``delivery`` is filled by ``_walk_fields``: ``"valued"`` = distinct
+        ``dataFieldName``s VW delivered a value for, ``"valueless"`` = distinct
+        names it shipped with a capture timestamp but no ``value``. Called on
+        EVERY parse (before the empty-dataset early return) so the counters can
+        never present a prior poll's ratio as the current one. The value-less
+        names are still never surfaced as readings — this is visibility only.
+        """
+        valued = delivery.get("valued") or set()
+        valueless = delivery.get("valueless") or set()
+        self.last_valued_count = len(valued)
+        self.last_valueless_count = len(valueless)
+        self.last_valueless_fields = sorted(valueless)[:_VALUELESS_FIELD_CAP]
 
     def set_bearer(self, token: str) -> None:
         """Inject / refresh the device-grant access_token for Bearer mode.
@@ -4779,9 +4854,17 @@ class EUDataActConnector:
         field_syn: dict[str, set[str]] = {}  # v2.15.4: bare/qualified synonym map
         contested: dict[str, set[str]] = {}  # same capture time, disagreeing values
         field_uuids: dict[str, set[str]] = {}  # generic-leaf -> content UUID(s)
-        fields = _walk_fields(payload, field_ts, field_syn, contested, field_uuids)
+        delivery: dict[str, set[str]] = {}  # #465: valued vs value-less names
+        fields = _walk_fields(
+            payload, field_ts, field_syn, contested, field_uuids, delivery
+        )
+        # #465 BooM80 — record the value/value-less split BEFORE the empty-dataset
+        # early return, so the diagnostic reflects THIS parse even when VW shipped
+        # only names (all value-less → fields empty → treated as "no data").
+        self._record_field_delivery(delivery)
         _LOGGER.debug(
-            "EU Data Act portal: %s dataset carried %d fields", vin[-6:], len(fields)
+            "EU Data Act portal: %s dataset carried %d fields (%d value-less)",
+            vin[-6:], len(fields), self.last_valueless_count,
         )
         # v2.13.0 (P1) — an empty/no-content ZIP (now returned as {} instead of
         # raising) means no data this poll: flag it so the no-data notice fires,

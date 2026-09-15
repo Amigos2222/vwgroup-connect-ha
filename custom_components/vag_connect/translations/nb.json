@@ -928,6 +928,9 @@
       "data_error_detail": {
         "name": "Datafeil"
       },
+      "error_reason": {
+        "name": "Feilårsakskode"
+      },
       "external_power_supply_state": {
         "name": "Ekstern strømforsyning"
       },

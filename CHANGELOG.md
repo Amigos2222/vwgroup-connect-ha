@@ -42,6 +42,29 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+## [4.7.11] - 2026-09-15 — vw.de master data that stays, and an honest look at thin portal exports
+
+### Fixed
+- **vw.de: colour, model and the exterior pictures no longer vanish when the live web reads are refused.**
+  Those three come only from the vw.de channel. When VW refuses the channel's live reads for a car, the
+  read aborted before the calls that fetch them, and a poll that brought nothing new wiped the values
+  already shown. They are now fetched on their own even when the live reads are walled, kept as
+  last-known values across empty polls (they don't change for a car), and the log names which vw.de
+  read was refused and with which status — so the next capture says what VW actually serves
+  (#465, thanks @toglo for both logs).
+- **vw.de debug lines now mask the VIN inside request paths.** A second pattern with the same name
+  had shadowed the URL masker, so the path VIN slipped through into debug logs (the JSON-body masking
+  was unaffected). Found while adding the line above.
+
+### Added
+- **Portal feed health shows how much of VW's export actually carries values.** VW's EU Data Act
+  export can deliver field names with timestamps but no value at all (a Tiguan III export: 10 fields,
+  3 with values). The portal-feed-health sensor now reports the fields with values, the count of
+  fields delivered without one, and their names — so "ok" no longer reads as "complete" when it isn't
+  (#465, thanks @BooM80 for reproducing it in VW's own export).
+- **Scout feed: `ErrorReason`** now feeds a diagnostic *Error Reason Code* sensor (disabled by default,
+  raw code, "0" = no error) (#1421, thanks @skornehl).
+
 ## [4.7.10] - 2026-09-14 — Portal logins that actually complete, and a refresh loop that hammered vw.de
 
 ### Fixed

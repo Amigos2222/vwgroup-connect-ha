@@ -72,6 +72,22 @@ CARRY_FORWARD_FIELDS: frozenset[str] = frozenset({
     "lifetime_zero_emission_km",
 })
 
+# v4.7.11 (#465, toglo) — STATIC master data that ONLY the vw.de channel supplies
+# for a portal-primary VW (model / year / colour / engine power / plate / nickname
+# / render images). Unlike CARRY_FORWARD_FIELDS these are IMMUTABLE per car, so
+# carry them forward INDEFINITELY when a poll omits them — a poll that lacks the
+# vw.de supplement (its live reads walled, or the supplementary channel fail-softed
+# to None) must never blank the model/colour/renders to "unknown". A fresh TRUTHY
+# value always wins (a genuine correction / first fill). The hold triggers on any
+# FALSY fresh value (None / "" / {} / []) — not just None — because image_urls
+# defaults to {} (models.py __post_init__), so a bare ``is None`` check would miss
+# the blanked-dict case. Kept separate from CARRY_FORWARD_FIELDS: the test is
+# truthiness, and the carry is unconditional rather than staleness-bounded.
+STATIC_MASTER_FIELDS: frozenset[str] = frozenset({
+    "model", "model_year", "exterior_color", "engine_power",
+    "license_plate", "vehicle_nickname", "image_urls",
+})
+
 # #923 — the parked position belongs in the "old but visible" class too: a
 # degraded parkingposition response that omits the coordinates does NOT mean the
 # car moved, and blanking them sent the device_tracker to "unknown" mid-outage.
@@ -319,6 +335,13 @@ def reconcile(
     notes: list[str] = []
     for field in CARRY_FORWARD_FIELDS:
         if merged.get(field) is None and previous.get(field) is not None:
+            merged[field] = previous[field]
+    # #465 — immutable vw.de master data: hold the last-known value when the fresh
+    # poll's value is FALSY (None / "" / {} / []) but a truthy one was recorded. A
+    # fresh truthy value always wins. Truthiness (not ``is None``) is deliberate so
+    # a blanked image_urls == {} is held, not published as "no renders".
+    for field in STATIC_MASTER_FIELDS:
+        if not merged.get(field) and previous.get(field):
             merged[field] = previous[field]
     # #1195 partial-dataset SoC guard. The reliable live SoC is the single-
     # occurrence VALID ``battery_level_HV`` pair; a poll that OMITS it carries

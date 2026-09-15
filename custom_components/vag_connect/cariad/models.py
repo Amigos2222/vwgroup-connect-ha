@@ -1716,6 +1716,11 @@ class VehicleData:
     # Joined non-empty data-error fields (error_code/number/description),
     # sentinels "#0"/"0" filtered. Diagnostic.
     data_error_detail: str | None = None
+    # v4.7.11 (#1421 Scout) — EU-Data-Act "ErrorReason" leaf (single dict UUID
+    # b477dd84, type number, cluster "All Data"). The dict documents no enum, so
+    # we keep the RAW code string; "0"/"#0"/"0.0" are the no-error sentinels →
+    # None (same convention as charging_error_code). Diagnostic, off by default.
+    error_reason: str | None = None
     # Portal report/message id (change detector). Diagnostic.
     last_report_id: str | None = None
     # Climatisation energy consumed (kWh). TOTAL_INCREASING.

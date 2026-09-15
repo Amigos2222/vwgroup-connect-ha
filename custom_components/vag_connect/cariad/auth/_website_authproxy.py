@@ -52,7 +52,7 @@ from aiohttp import ClientError, ClientSession, ClientTimeout, TooManyRedirects
 
 from ..._canaries import CANARY_WEBSITE_AUTHPROXY
 from .._util import drop_charge_sentinel, drop_odometer_sentinel
-from ..exceptions import AuthenticationError
+from ..exceptions import APIError, AuthenticationError
 from ..models import VehicleData
 from ._eu_data_act import _login_fields, _login_error, _resolve_action, _TC_MARKERS
 
@@ -164,7 +164,12 @@ _URL_UUID_RE = re.compile(
 # a VIN is owner-identifying PII, so mask it too. Canonical 17-char VIN charset,
 # word-bounded — the surrounding literal path segments are lowercase, so no
 # false-positive masking.
-_VIN_RE = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b")
+# v4.7.11 (#465) — MUST be a distinct name from the JSON-body ``_VIN_RE`` defined
+# below (``"vin":"…"``): that one is assigned later at module scope and would
+# otherwise SHADOW this one, so ``_safe_url`` silently stopped masking path VINs
+# (the JSON pattern never matches a URL path). A newly-added INFO log surfaced the
+# leak. Keep the two regexes separately named.
+_URL_VIN_RE = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b")
 
 
 def _safe_url(url: str) -> str:
@@ -172,9 +177,20 @@ def _safe_url(url: str) -> str:
     try:
         p = urlparse(url)
         safe = _URL_UUID_RE.sub("<uuid>", f"{p.netloc}{p.path}")
-        return _VIN_RE.sub("<vin>", safe) or "<empty-url>"
+        return _URL_VIN_RE.sub("<vin>", safe) or "<empty-url>"
     except Exception:  # noqa: BLE001
         return "<unparseable-url>"
+
+
+def _http_status_from_exc(exc: BaseException) -> str:
+    """HTTP status pulled from an authproxy read exception for diagnostics.
+
+    ``_get_json`` raises ``AuthenticationError(f"... -> HTTP {status}")``, so the
+    status is the one thing attributable to a walled core read without threading
+    it back up the stack. Returns the digits, or ``"auth-fail"`` when absent — a
+    value-safe probe key, never the raw message."""
+    m = re.search(r"HTTP (\d{3})", str(exc))
+    return m.group(1) if m else "auth-fail"
 
 
 def _redacted_cookie_summary(cookies: list[dict[str, Any]]) -> str:
@@ -191,6 +207,8 @@ def _redacted_cookie_summary(cookies: list[dict[str, Any]]) -> str:
         for c in cookies
     ) or "(none)"
 
+# JSON-body VIN scan (relations parse, list_vehicle_vins) — distinct from the URL
+# path masker ``_URL_VIN_RE`` above; see the shadow note there (#465).
 _VIN_RE = re.compile(r'"vin"\s*:\s*"([A-HJ-NPR-Z0-9]{17})"')
 
 
@@ -926,7 +944,7 @@ class WebsiteAuthProxyConnector:
         _LOGGER.debug(
             "Website authproxy refresh GET landed host=%s path=%s status=%s",
             landed_host,
-            _VIN_RE.sub("<vin>", _URL_UUID_RE.sub("<uuid>", landed_path)),
+            _URL_VIN_RE.sub("<vin>", _URL_UUID_RE.sub("<uuid>", landed_path)),
             status,
         )
         if not on_portal and (
@@ -1795,183 +1813,213 @@ class WebsiteAuthProxyConnector:
         """
         d = VehicleData(vin=vin)
         got_data = False
+        # v4.7.11 (#465, toglo) — a per-car vw.de wall (401/403/412->Auth on a
+        # core read: relations / charging / maintenance / the relation-detail
+        # fallback) used to abort the whole poll BEFORE the tail reads below, so a
+        # portal-primary VW whose live reads are walled never got its vw.de-only
+        # STATIC master data (model / year / colour / renders) even though those
+        # endpoints are independent and may still answer. Capture the core
+        # failure, still run the fail-soft tail (cheap GETs on the SAME live
+        # session — no extra login), then re-raise so _read_authproxy's
+        # refresh+retry semantics stay identical. ``_core_read`` names the read in
+        # flight so the wall is attributable in the log + diagnostics.
+        _core_exc: AuthenticationError | APIError | None = None
+        _core_read = "relations"
 
         # Resolve the car's platform (MBB/MEB) up front so the live-status reads
         # below pick the correct gdc, and reuse the parsed relations for the
         # nickname/plate enrich at the end (one relations fetch, not two). A
         # genuine 401/403 here propagates (dead session → re-login).
-        rels: AuthproxyRelations | None = None
         try:
-            rels = await self.get_relations()  # also populates self._vin_backend
-        except AuthenticationError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug(
-                "Website authproxy relations preflight skipped for %s (%s)",
-                vin[-6:], type(exc).__name__,
-            )
-
-        # #1357 — build the live charging + maintenance URLs with the per-platform
-        # gdc + live VCF host (get_relations above populated the backend cache so
-        # self._gdc resolves right). The param-less form silently returned no live
-        # body for MEB/ID.x cars, so SoC / cruisingRangeElectric_km / odometer fell
-        # back to the stale portal feed — the #1357 electric-range gap.
-        from .._authproxy import (  # noqa: PLC0415
-            build_charging_url,
-            build_maintenance_url,
-        )
-
-        charging = await self._get_json(
-            build_charging_url(vin, self._gdc(vin)),
-            accept="*/*",
-            soft=True,
-        )
-        if isinstance(charging, dict):
-            map_charging_to_vehicle_data(charging, d)
-            got_data = True
-
-        maintenance = await self._get_json(
-            build_maintenance_url(vin, self._gdc(vin)),
-            accept="*/*",
-            soft=True,
-        )
-        if isinstance(maintenance, dict):
-            map_maintenance_to_vehicle_data(maintenance, d)
-            got_data = True
-
-        # v2.16.0 — active dashboard warning-lights count (BETA, fail-soft).
-        try:
-            count = await self.get_warning_lights(vin)
-            if count is not None:
-                d.active_warning_lights_count = count
-                got_data = True
-        except AuthenticationError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug(
-                "Website authproxy warninglights read skipped for %s (%s)",
-                vin[-6:], type(exc).__name__,
-            )
-
-        # v2.16.0 — last confirmed remote lock/unlock command (BETA, fail-soft).
-        try:
-            lock = await self.get_last_lock_action(vin)
-            if lock is not None:
-                d.last_lock_action, d.last_lock_action_at = lock
-                got_data = True
-        except AuthenticationError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug(
-                "Website authproxy lock-history read skipped for %s (%s)",
-                vin[-6:], type(exc).__name__,
-            )
-
-        # v2.16.0 — nickname + licence plate from the relations LIST parse
-        # (fetched up front above — reused here, no second round-trip). A miss
-        # leaves both fields None; falls back to the singular per-VIN relation
-        # detail only if the list omits this VIN.
-        try:
-            match = None
-            if rels is not None:
-                match = next(
-                    (v for v in rels.vehicles if v.vin == vin), None
-                )
-            if match is None:
-                match = await self.get_relation_detail(vin)
-            if match is not None:
-                if match.nickname:
-                    d.vehicle_nickname = match.nickname
-                if match.license_plate:
-                    d.license_plate = match.license_plate
-        except AuthenticationError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug(
-                "Website authproxy relation enrich skipped for %s (%s)",
-                vin[-6:], type(exc).__name__,
-            )
-
-        # #923 — EXPERIMENTAL parkingposition read, gated on the opt-in test
-        # cohort (``probe_position``, set by the coordinator from entry.data).
-        # Attempts the same WeConnect proxy realm that already carries charging +
-        # warning-lights — the only remaining attestation-free lever for VW EU GPS
-        # (the CARIAD app position endpoint is attestation-walled + 403 for EU
-        # passenger cars, and the EU Data Act live feed has no coordinate field).
-        # Fail-soft, never forces a re-login. Self-limiting: it stops after a few
-        # no-coordinate polls so a doomed request isn't sent forever; the moment
-        # coordinates come back it latches on and keeps reading as a real feature.
-        if self._should_probe_position():
-            if not self._position_available:
-                self._position_probe_tries += 1
+            rels: AuthproxyRelations | None = None
             try:
-                pos = await self.get_parking_position(vin)
-                if pos is not None:
-                    d.latitude, d.longitude, _pos_ts = pos
-                    if _pos_ts:
-                        d.position_captured_at = _pos_ts
-                        # v4.7.10 (#1419) — position carCapturedTimestamp also
-                        # feeds the last_seen_at freshness anchor (advance-only).
-                        _bump_last_seen(d, _pos_ts)
+                rels = await self.get_relations()  # also populates self._vin_backend
+            except AuthenticationError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.debug(
+                    "Website authproxy relations preflight skipped for %s (%s)",
+                    vin[-6:], type(exc).__name__,
+                )
+
+            # #1357 — build the live charging + maintenance URLs with the per-platform
+            # gdc + live VCF host (get_relations above populated the backend cache so
+            # self._gdc resolves right). The param-less form silently returned no live
+            # body for MEB/ID.x cars, so SoC / cruisingRangeElectric_km / odometer fell
+            # back to the stale portal feed — the #1357 electric-range gap.
+            from .._authproxy import (  # noqa: PLC0415
+                build_charging_url,
+                build_maintenance_url,
+            )
+
+            _core_read = "charging"
+            charging = await self._get_json(
+                build_charging_url(vin, self._gdc(vin)),
+                accept="*/*",
+                soft=True,
+            )
+            if isinstance(charging, dict):
+                map_charging_to_vehicle_data(charging, d)
+                got_data = True
+
+            _core_read = "maintenance"
+            maintenance = await self._get_json(
+                build_maintenance_url(vin, self._gdc(vin)),
+                accept="*/*",
+                soft=True,
+            )
+            if isinstance(maintenance, dict):
+                map_maintenance_to_vehicle_data(maintenance, d)
+                got_data = True
+
+            # v2.16.0 — active dashboard warning-lights count (BETA, fail-soft).
+            try:
+                count = await self.get_warning_lights(vin)
+                if count is not None:
+                    d.active_warning_lights_count = count
                     got_data = True
-                    self._position_available = True
             except AuthenticationError:
                 raise
             except Exception as exc:  # noqa: BLE001
                 _LOGGER.debug(
-                    "Website authproxy parkingposition read skipped for %s (%s)",
+                    "Website authproxy warninglights read skipped for %s (%s)",
                     vin[-6:], type(exc).__name__,
                 )
 
-        # SoH probe (4.3.2 batteryHealthState) — same opt-in test-cohort gate as
-        # the GPS probe. The app reads SoH via the attestation-walled BFF
-        # selectivestatus job; this checks whether the attestation-free vw.de proxy
-        # serves the same ``stateOfHealth.ubeIndicator_pct``. DIAGNOSTICS-ONLY: the
-        # raw body is captured (redacted) for the shared cohort diagnostics; we do
-        # NOT feed it to the SoH entity (which stays the user-nominal estimate) until
-        # a real value is confirmed across cars. Fail-soft, self-limiting like GPS.
-        if self._should_probe_soh():
-            if not self._soh_available:
-                self._soh_probe_tries += 1
+            # v2.16.0 — last confirmed remote lock/unlock command (BETA, fail-soft).
             try:
-                _soh = await self.get_battery_health(vin)
-                if _soh is not None:
-                    self._soh_available = True
+                lock = await self.get_last_lock_action(vin)
+                if lock is not None:
+                    d.last_lock_action, d.last_lock_action_at = lock
+                    got_data = True
             except AuthenticationError:
                 raise
             except Exception as exc:  # noqa: BLE001
                 _LOGGER.debug(
-                    "Website authproxy SoH probe skipped for %s (%s)",
+                    "Website authproxy lock-history read skipped for %s (%s)",
                     vin[-6:], type(exc).__name__,
                 )
 
-        # #1357 (Ra72xx) — EXPERIMENTAL measurements/range probe, same opt-in test-
-        # cohort gate as the GPS / SoH probes. A portal-only ID.3 surfaces a null
-        # electric range because the charging/status body carries no measurements
-        # block; the electricRange leaf (and diesel AdBlue range) live under
-        # selectivestatus?jobs=measurements, which the app reads via the attestation-
-        # walled BFF. This checks whether the attestation-free vw.de proxy serves it.
-        # DIAGNOSTICS-ONLY: the raw body + the leaves seen are captured for the cohort;
-        # we do NOT feed electric_range_km / adblue_range_km / combustion_range_km
-        # until a live #1357 capture confirms the leaf and the allowlist-pass (mirrors
-        # the SoH probe's diagnostics-only contract above). Fail-soft, self-limiting.
-        if self._should_probe_measurements():
-            if not self._measurements_available:
-                self._measurements_probe_tries += 1
+            # v2.16.0 — nickname + licence plate from the relations LIST parse
+            # (fetched up front above — reused here, no second round-trip). A miss
+            # leaves both fields None; falls back to the singular per-VIN relation
+            # detail only if the list omits this VIN.
             try:
-                _leaves = await self.get_range_measurements(vin)
-                if _leaves:
-                    self._measurements_available = True
+                match = None
+                if rels is not None:
+                    match = next(
+                        (v for v in rels.vehicles if v.vin == vin), None
+                    )
+                if match is None:
+                    _core_read = "relations-detail"
+                    match = await self.get_relation_detail(vin)
+                if match is not None:
+                    if match.nickname:
+                        d.vehicle_nickname = match.nickname
+                    if match.license_plate:
+                        d.license_plate = match.license_plate
             except AuthenticationError:
                 raise
             except Exception as exc:  # noqa: BLE001
                 _LOGGER.debug(
-                    "Website authproxy measurements probe skipped for %s (%s)",
+                    "Website authproxy relation enrich skipped for %s (%s)",
                     vin[-6:], type(exc).__name__,
                 )
 
-        if got_data:
-            d.connection_state = "online"
+            # #923 — EXPERIMENTAL parkingposition read, gated on the opt-in test
+            # cohort (``probe_position``, set by the coordinator from entry.data).
+            # Attempts the same WeConnect proxy realm that already carries charging +
+            # warning-lights — the only remaining attestation-free lever for VW EU GPS
+            # (the CARIAD app position endpoint is attestation-walled + 403 for EU
+            # passenger cars, and the EU Data Act live feed has no coordinate field).
+            # Fail-soft, never forces a re-login. Self-limiting: it stops after a few
+            # no-coordinate polls so a doomed request isn't sent forever; the moment
+            # coordinates come back it latches on and keeps reading as a real feature.
+            if self._should_probe_position():
+                if not self._position_available:
+                    self._position_probe_tries += 1
+                try:
+                    pos = await self.get_parking_position(vin)
+                    if pos is not None:
+                        d.latitude, d.longitude, _pos_ts = pos
+                        if _pos_ts:
+                            d.position_captured_at = _pos_ts
+                            # v4.7.10 (#1419) — position carCapturedTimestamp also
+                            # feeds the last_seen_at freshness anchor (advance-only).
+                            _bump_last_seen(d, _pos_ts)
+                        got_data = True
+                        self._position_available = True
+                except AuthenticationError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    _LOGGER.debug(
+                        "Website authproxy parkingposition read skipped for %s (%s)",
+                        vin[-6:], type(exc).__name__,
+                    )
+
+            # SoH probe (4.3.2 batteryHealthState) — same opt-in test-cohort gate as
+            # the GPS probe. The app reads SoH via the attestation-walled BFF
+            # selectivestatus job; this checks whether the attestation-free vw.de proxy
+            # serves the same ``stateOfHealth.ubeIndicator_pct``. DIAGNOSTICS-ONLY: the
+            # raw body is captured (redacted) for the shared cohort diagnostics; we do
+            # NOT feed it to the SoH entity (which stays the user-nominal estimate) until
+            # a real value is confirmed across cars. Fail-soft, self-limiting like GPS.
+            if self._should_probe_soh():
+                if not self._soh_available:
+                    self._soh_probe_tries += 1
+                try:
+                    _soh = await self.get_battery_health(vin)
+                    if _soh is not None:
+                        self._soh_available = True
+                except AuthenticationError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    _LOGGER.debug(
+                        "Website authproxy SoH probe skipped for %s (%s)",
+                        vin[-6:], type(exc).__name__,
+                    )
+
+            # #1357 (Ra72xx) — EXPERIMENTAL measurements/range probe, same opt-in test-
+            # cohort gate as the GPS / SoH probes. A portal-only ID.3 surfaces a null
+            # electric range because the charging/status body carries no measurements
+            # block; the electricRange leaf (and diesel AdBlue range) live under
+            # selectivestatus?jobs=measurements, which the app reads via the attestation-
+            # walled BFF. This checks whether the attestation-free vw.de proxy serves it.
+            # DIAGNOSTICS-ONLY: the raw body + the leaves seen are captured for the cohort;
+            # we do NOT feed electric_range_km / adblue_range_km / combustion_range_km
+            # until a live #1357 capture confirms the leaf and the allowlist-pass (mirrors
+            # the SoH probe's diagnostics-only contract above). Fail-soft, self-limiting.
+            if self._should_probe_measurements():
+                if not self._measurements_available:
+                    self._measurements_probe_tries += 1
+                try:
+                    _leaves = await self.get_range_measurements(vin)
+                    if _leaves:
+                        self._measurements_available = True
+                except AuthenticationError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    _LOGGER.debug(
+                        "Website authproxy measurements probe skipped for %s (%s)",
+                        vin[-6:], type(exc).__name__,
+                    )
+
+            if got_data:
+                d.connection_state = "online"
+        except (AuthenticationError, APIError) as exc:
+            # #465 — a core read hit a per-car wall. Remember it, note WHICH
+            # read + status once (host+path stay masked in the exc message; the
+            # query is never included), and fall through to the independent
+            # render/master-data tail before re-raising so the caller's
+            # refresh+retry is unchanged.
+            _core_exc = exc
+            _status = _http_status_from_exc(exc)
+            self.probe_outcomes[f"vwde_core_read:{_core_read}"] = _status
+            _LOGGER.info(
+                "vw.de core read '%s' walled for %s (%s); running the render/"
+                "master-data tail anyway then re-raising (#465)",
+                _core_read, vin[-6:], exc,
+            )
 
         # #1229 (Ra72xx) — surface the vw.de exterior renders as image entities.
         # This is the render source for VW-EU cars read over vw.de/portal, whose
@@ -2022,4 +2070,10 @@ class WebsiteAuthProxyConnector:
         except Exception:  # noqa: BLE001
             _LOGGER.debug("vw.de master-data skipped for %s", vin[-6:])
 
+        # #465 — the tail (renders + master data) has now been attempted even on a
+        # walled poll; propagate the core failure so _read_authproxy refreshes +
+        # retries exactly as before (a genuine dead session recovers; a per-car
+        # wall fail-softs to None while the primary channel stands).
+        if _core_exc is not None:
+            raise _core_exc
         return d

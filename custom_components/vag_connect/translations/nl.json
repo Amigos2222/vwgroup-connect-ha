@@ -928,6 +928,9 @@
       "data_error_detail": {
         "name": "Datafout"
       },
+      "error_reason": {
+        "name": "Foutredencode"
+      },
       "external_power_supply_state": {
         "name": "Externe voeding"
       },

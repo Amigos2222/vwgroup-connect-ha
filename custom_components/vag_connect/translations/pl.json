@@ -928,6 +928,9 @@
       "data_error_detail": {
         "name": "Błąd danych"
       },
+      "error_reason": {
+        "name": "Kod przyczyny błędu"
+      },
       "external_power_supply_state": {
         "name": "Zasilanie zewnętrzne"
       },

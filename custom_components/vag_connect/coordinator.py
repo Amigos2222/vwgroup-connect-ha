@@ -3050,6 +3050,13 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 entry["minutes_since_last_snapshot"] = data.get(
                     "minutes_since_last_snapshot"
                 )
+                # #465 (BooM80) — carry the value/value-less split onto the portal
+                # feed-health status the same way portal_health does.
+                entry["fields_with_values"] = data.get("fields_with_values")
+                entry["fields_delivered_without_values"] = data.get(
+                    "fields_delivered_without_values"
+                )
+                entry["valueless_field_names"] = data.get("valueless_field_names")
             status[token] = entry
         return status
 
@@ -6599,6 +6606,20 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 data["last_snapshot_at"] = getattr(_portal, "last_snapshot_at", None)
                 data["last_no_data_at"] = getattr(_portal, "last_no_data_at", None)
                 data["no_data_count"] = getattr(_portal, "no_data_count", None)
+                # #465 (BooM80) — field-delivery honesty. VW can ship a field's
+                # name + capture time but no value (BooM80: 10 names, 3 valued);
+                # surface how many of the delivered names actually carried a value
+                # so a thin feed reads as "VW sent nothing", not "we dropped it".
+                data["fields_with_values"] = getattr(
+                    _portal, "last_valued_count", None
+                )
+                data["fields_delivered_without_values"] = getattr(
+                    _portal, "last_valueless_count", None
+                )
+                _valueless = getattr(_portal, "last_valueless_fields", None)
+                data["valueless_field_names"] = (
+                    list(_valueless) if _valueless else None
+                )
                 # Stage-1 — the one-time historical export lifecycle state, set
                 # only while an export is actually in flight (or just finished) so
                 # the sensor stays hidden for the majority who never use it.
