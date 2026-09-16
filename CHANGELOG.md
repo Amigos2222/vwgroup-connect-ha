@@ -42,6 +42,15 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+### Fixed
+- **MBB commands on a car outside Germany no longer default to the `/VW/DE/` market path.** The
+  final charge/climate action is the only leg that carries a market segment; it came from the
+  account token or fell back to a hard `DE`, so a Dutch Passat GTE passed both S-PIN legs and was
+  refused at the action. The segment now falls back to your Home Assistant country before `DE`, and
+  every MBB command logs one line with the service, whether the car's service list grants it, the
+  host VW handed us and the market segment with its source — no VIN (#584, thanks @pp2stay for the
+  controlled re-test).
+
 ## [4.7.11] - 2026-09-16 — Competitor parity round: vw.de master data that stays, fresher portal readings, richer timers, honest diagnostics
 
 ### Fixed

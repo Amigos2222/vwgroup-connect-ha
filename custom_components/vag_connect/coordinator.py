@@ -1328,6 +1328,15 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 ola_app_version_override=ola_app_v,
                 ola_user_agent_override=ola_ua,
             )
+        # v4.7.12 (#584) — hand every brand client the HA instance locale so
+        # market-scoped paths (MBB fs-car ``{country}``) can fall back to the
+        # user's real country instead of a hard "DE". Fail-soft; the Škoda
+        # keygen headers read the same attributes.
+        try:
+            setattr(self._cariad_client, "_ha_language", self.hass.config.language or "")
+            setattr(self._cariad_client, "_ha_country", self.hass.config.country or "")
+        except Exception:  # noqa: BLE001
+            pass
         # v2.10.4 — push the user-supplied OAuth client_id override
         # onto the underlying IDKAuth instance so the AuthConfigResolver
         # prepends it to the chain. No-op when override is None.
@@ -2894,6 +2903,8 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             if sub is None:
                 continue
             sub._test_cohort = cohort
+            # #584 — sub-connectors armed before the client got its locale.
+            sub._ha_country = getattr(client, "_ha_country", "") or ""
             probe = getattr(sub, "_probe_fetched_role_cohort", None)
             if cohort and callable(probe):
                 for _vin in sorted(getattr(sub, "mbb_no_legacy_vins", None) or ()):

@@ -287,6 +287,12 @@ class VWEUClient(CariadBaseClient):
     Data paths documented in docs/research/VAG_GROUP_ECOSYSTEM.md.
     """
 
+    # v4.7.12 (#584) — Home Assistant instance locale, pushed in by the
+    # coordinator (fail-soft setattr) and inherited by the MBB sub-connectors;
+    # the market-segment fallback reads ``_ha_country``.
+    _ha_country: str = ""
+    _ha_language: str = ""
+
     def __init__(self, session: Any, email: str, password: str, spin: str = "") -> None:
         super().__init__(session, BRAND_VW_EU, email, password, spin)
         # v2.1.0 (HomeRegion full wire-in) — per-VIN base URL cache.
@@ -942,6 +948,8 @@ class VWEUClient(CariadBaseClient):
             # primary's test-cohort flag; otherwise the probe never fires for the
             # read-only-primary shape (VW-EU portal/vw.de + armed MBB channel).
             cmd._test_cohort = getattr(self, "_test_cohort", False)
+            # #584 — and the HA instance country (market-segment fallback).
+            cmd._ha_country = getattr(self, "_ha_country", "")
             if fallback_only:
                 self._mbb_fallback: "VWEUClient | None" = cmd
                 _LOGGER.info(
@@ -1445,10 +1453,8 @@ class VWEUClient(CariadBaseClient):
         # the account's own country from the id_token (CH/DE/AT…); the legacy
         # IDK wrapper-404 path keeps the DE default.
         brand_name = self._brand.name  # 'volkswagen' or 'audi'
-        if self._tokens and self._tokens.strategy == "mbb":
-            country = self._mbb_country_from_id_token() or "DE"
-        else:
-            country = "DE"
+        country = self._mbb_country(
+            token_ok=bool(self._tokens and self._tokens.strategy == "mbb"))
         url = build_mbb_wake_url(read_base, brand_name, country, vin)
         _LOGGER.debug(
             "MBB wake POST → %s (vin ***%s)",
@@ -1632,6 +1638,30 @@ class VWEUClient(CariadBaseClient):
             if len(region) == 2:
                 return region.upper()
         return None
+
+    def _mbb_country_with_source(self, *, token_ok: bool = True) -> tuple[str, str]:
+        """v4.7.12 (#584, pp2stay) — the ``{country}`` market segment of the fs-car
+        action path, WITH its provenance so a refused action can be traced.
+
+        Order: (1) the account's country/locale claim in the id_token (when the
+        token is one we may read it from), (2) the Home Assistant instance
+        country (``hass.config.country``, pushed in by the coordinator as
+        ``_ha_country``), (3) ``DE`` — the historical hard default. A Dutch
+        Passat GTE with a claim-less token used to be routed to ``/VW/DE/`` and
+        refused at the market-scoped action; step (2) sends it to ``/VW/NL/``.
+        """
+        if token_ok:
+            tok_country = self._mbb_country_from_id_token()
+            if tok_country:
+                return tok_country, "id_token"
+        ha_country = str(getattr(self, "_ha_country", "") or "").strip().upper()
+        if len(ha_country) == 2 and ha_country.isalpha():
+            return ha_country, "home-assistant country"
+        return "DE", "default"
+
+    def _mbb_country(self, *, token_ok: bool = True) -> str:
+        """Market segment only (see ``_mbb_country_with_source``)."""
+        return self._mbb_country_with_source(token_ok=token_ok)[0]
 
     def _mbb_app_identity(self) -> tuple[str, str]:
         """``(X-App-Name, X-App-Version)`` for the active brand.
@@ -2087,7 +2117,7 @@ class VWEUClient(CariadBaseClient):
             return
         self._fetched_role_probed.add(vin)
 
-        country = self._mbb_country_from_id_token() or "DE"
+        country = self._mbb_country()
         seg = mbb_brand_segment(self._brand.name)
         # v4.7.10 (#584/#923): each probe carries its own (key, url) because the
         # two rolesrights surfaces have different builders. The fetched-role gate
@@ -2217,7 +2247,7 @@ class VWEUClient(CariadBaseClient):
             return d
 
         read_base = await self._mbb_resolve_read_base(vin)
-        country = self._mbb_country_from_id_token() or "DE"
+        country = self._mbb_country()
         host_label = read_base.split("//")[-1].split("/")[0]
         url = build_mbb_vsr_status_url(read_base, self._brand.name, country, vin)
         _LOGGER.info(
@@ -2328,10 +2358,8 @@ class VWEUClient(CariadBaseClient):
         if "cariad.digital" in read_base or "bff.cariad" in read_base:
             read_base = MBB_DEFAULT_READ_BASE
         brand_name = self._brand.name
-        if self._tokens and self._tokens.strategy == "mbb":
-            country = self._mbb_country_from_id_token() or "DE"
-        else:
-            country = "DE"
+        country = self._mbb_country(
+            token_ok=bool(self._tokens and self._tokens.strategy == "mbb"))
 
         # Leg 1 — challenge
         try:
@@ -2508,7 +2536,7 @@ class VWEUClient(CariadBaseClient):
         if not mbb_operation_granted(oplist, spec.service_id, spec.operation_id):
             oplist = await self._get_mbb_operationlist(
                 vin, for_command=True, force_refresh=True)
-        country = self._mbb_country_from_id_token() or "DE"
+        country, country_src = self._mbb_country_with_source()
         base = mbb_service_base(
             oplist, spec.service_id, brand=self._brand.name,
             country=country, vin=vin)
@@ -2532,6 +2560,15 @@ class VWEUClient(CariadBaseClient):
                 "true not-granted 403s before any S-PIN try).",
                 command_name, spec.operation_id, vin[-6:])
 
+        # #584 (pp2stay) — say what the final action will target, PII-free:
+        # service, whether the operationList grants the op, the per-service
+        # host VW's list handed us (no VIN), and the market segment + source.
+        _LOGGER.info(
+            "MBB %s: service=%s granted=%s host=%s market=%s (%s)",
+            command_name, spec.service_id,
+            mbb_operation_granted(oplist, spec.service_id, spec.operation_id),
+            base.split("//")[-1].split("/")[0], country, country_src,
+        )
         setter = MBB_SETTER_BASE
         # Leg 1 — operation-specific SecToken challenge
         try:
