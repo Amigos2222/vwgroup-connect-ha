@@ -22,13 +22,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
-from homeassistant.const import CONF_DEVICE_ID, CONF_OPTIONS
+from homeassistant.const import CONF_DEVICE_ID
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN
 from .trigger_detect import EVENT_KEYS
+
+# ``CONF_OPTIONS`` only exists in homeassistant.const on newer cores; the
+# key itself is stable ("options"), so define it locally (CI runs older HA).
+CONF_OPTIONS = "options"
 
 # v4.7.11 (trigger-vin-targeting) — optional per-vehicle scoping. Our own
 # trigger.py docstring flagged "per-device targeting is a future enhancement"; on

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.const import CONF_OPTIONS
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
@@ -23,7 +22,7 @@ from .const import DOMAIN
 # v4.7.11 (trigger-vin-targeting) — share the vin option schema + device→VIN
 # resolver with the trigger platform (both are platform-class-independent, so
 # this import is safe on cores without the named-condition platform).
-from .trigger import _OPTIONS_SCHEMA, _resolve_target_vins
+from .trigger import CONF_OPTIONS, _OPTIONS_SCHEMA, _resolve_target_vins
 
 # The named-condition platform only exists on HA 2026.7+ (upstream-flagged "do not
 # use yet by integrations"). Import it defensively so the module stays importable
