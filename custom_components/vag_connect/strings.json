@@ -1407,6 +1407,9 @@
       "reminder_tyre_repair_kit": {
         "name": "Tyre repair kit reminder"
       },
+      "brake_pads_prediction": {
+        "name": "Brake Pads Wear Prediction"
+      },
       "exterior_color": {
         "name": "Exterior Colour"
       },
@@ -2178,6 +2181,16 @@
     }
   },
   "services": {
+    "unlock_trunk": {
+      "name": "Unlock trunk (Porsche, experimental)",
+      "description": "Unlocks the tailgate only on the given Porsche — the doors stay locked. Porsche only; other brands reject the call. Requires the S-PIN. Experimental: derived from the My Porsche app and not yet verified against a real car.",
+      "fields": {
+        "vin": {
+          "name": "VIN",
+          "description": "VIN of the vehicle."
+        }
+      }
+    },
     "execute_vehicle_action": {
       "name": "Execute Vehicle Action",
       "description": "Unified service that dispatches a vehicle action selected from a dropdown. Equivalent to calling the per-action service of the same name but easier to find in the Home Assistant Lovelace service picker. All existing per-action services (vag_connect.lock, vag_connect.start_climatisation, etc) keep working unchanged.",

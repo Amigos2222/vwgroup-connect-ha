@@ -3,9 +3,10 @@ name: App Atlas Builder
 # Cross-brand VAG app discovery pipeline. See docs/research/app-atlas/
 # README.md for context + LEGAL.md for reverse-engineering disclosure.
 #
-# Phase A.1 (current): version-polling for all 7 brands via Google Play, with
-#                      the APK mirrors as fallback for the two brands that
-#                      publish no version on their store listing.
+# Phase A.1 (current): version-polling for all 8 brand builds via Google Play,
+#                      with the APK mirrors as fallback for the brands that
+#                      publish no version on their store listing. Porsche ships
+#                      two packages (NA + rest-of-world) and both are polled.
 # Phase A.2 (next):    APK download + apktool extraction + grep.
 # Phase A.3 (later):   jadx decompile + cross-version semantic diff.
 #
@@ -71,7 +72,7 @@ jobs:
           FORCE_FLAG=""
           if [ "${{ inputs.force_extract }}" = "true" ]; then
             FORCE_FLAG="--force-extract"
-            echo "::notice::force_extract=true — extracting all 7 brands regardless of cache"
+            echo "::notice::force_extract=true — extracting every brand regardless of cache"
           fi
           python scripts/app_atlas/build_atlas.py --with-apk-extraction $FORCE_FLAG
 

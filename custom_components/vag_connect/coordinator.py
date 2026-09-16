@@ -479,6 +479,39 @@ def _mbb_command_capability(
     return bool(svc is not None and svc.enabled)
 
 
+# MyŠkoda 8.16.0 gates the whole public-API-key feature on this capability id (the
+# settings screen reads it before it shows the key management at all). A car whose
+# capability document is loaded and does NOT list it cannot mint a key, so trying
+# anyway only produces a 400 per session and a misleading probe.
+_SKODA_KEY_MGMT_CAPABILITY = "PUBLIC_API_KEY_MANAGEMENT"
+
+
+def _capability_listed(caps: Any, capability_id: str) -> bool | None:
+    """Is *capability_id* present in a cached capabilities document? Tri-state.
+
+    - ``True``  — the document is loaded and lists the capability.
+    - ``False`` — the document is loaded and does NOT list it.
+    - ``None``  — no/unusable document, or the backend flagged ``errors`` on it, so
+      nothing is known.
+
+    PRESENCE only — deliberately NOT ``vehicle_supports_capability``, which also
+    returns False for a listed-but-currently-limited capability. A transient status
+    (battery, location, license) must not permanently stop an enrolment that would
+    otherwise work; only explicit absence is proof the feature does not exist for
+    this car. Pure + total."""
+    if not isinstance(caps, dict):
+        return None
+    if isinstance(caps.get("errors"), list) and caps["errors"]:
+        return None
+    items = caps.get("capabilities")
+    if not isinstance(items, list):
+        return None
+    return any(
+        isinstance(entry, dict) and entry.get("id") == capability_id
+        for entry in items
+    )
+
+
 def _parse_trip_statistics(
     short_resp: Any, long_resp: Any
 ) -> dict[str, Any]:
@@ -779,14 +812,68 @@ _REMINDER_KEYS = {
 }
 
 
+# v4.7.12 (8.16.0 APK) — the same PredictiveMaintenanceDto grew a second
+# top-level array ``predictions`` beside ``reminders``. PredictionTypeDto has
+# exactly ONE value today (BRAKE_PADS); an unknown future type is dropped rather
+# than guessed — same rule as _REMINDER_KEYS above.
+_PREDICTION_KEYS = {
+    "BRAKE_PADS": "brake_pads_prediction",
+}
+
+
+def _parse_predictions(predictions: Any) -> dict[str, Any]:
+    """v4.7.12 (8.16.0 APK) — ``predictions: [PredictionDto{type, name, status,
+    statusDescription, activeLeadId}]`` → flat per-type fields. State = the
+    lowercased ``status``; the app renders ok / warning ("Replace soon") /
+    critical ("Replace now") / NO_DATA from that same string.
+
+    Unlike the reminders' "NOT_SET" sentinel (#1310), NO_DATA is NOT dropped: the
+    app itself displays it (the wear model simply hasn't converged yet), and
+    keeping it means the entity exists from the first poll and can still
+    transition to ok/warning/critical later — a gated field that only shows up on
+    a later poll would never spawn its sensor.
+    """
+    if not isinstance(predictions, list):
+        return {}
+    out: dict[str, Any] = {}
+    for p in predictions:
+        if not isinstance(p, dict):
+            continue
+        ptype = str(p.get("type"))
+        key = _PREDICTION_KEYS.get(ptype)
+        if not key:
+            continue
+        status = p.get("status")
+        if not isinstance(status, str) or not status:
+            continue
+        out[key] = status.lower()
+        out[f"{key}_type"] = ptype
+        for src, dst in (
+            ("name", f"{key}_name"),
+            ("statusDescription", f"{key}_status_description"),
+            ("activeLeadId", f"{key}_active_lead_id"),
+        ):
+            val = p.get(src)
+            # activeLeadId is nullable in the DTO (no open service lead).
+            if isinstance(val, str) and val:
+                out[dst] = val
+    return out
+
+
 def _parse_predictive_maintenance(resp: Any) -> dict[str, Any]:
     """v2.31.0 (8.15.0 APK) — service reminders → per-type flat field. State =
     the ``dueDate`` (when it's due) if present, else the ``status``. Empty → {}.
+
+    v4.7.12 (8.16.0 APK) — the same response also carries ``predictions``; the
+    two arrays are optional and parsed independently, so a payload with only one
+    of them still yields that one's fields.
     """
-    reminders = resp.get("reminders") if isinstance(resp, dict) else None
-    if not isinstance(reminders, list):
+    if not isinstance(resp, dict):
         return {}
-    out: dict[str, Any] = {}
+    out: dict[str, Any] = _parse_predictions(resp.get("predictions"))
+    reminders = resp.get("reminders")
+    if not isinstance(reminders, list):
+        return out
     for r in reminders:
         if not isinstance(r, dict):
             continue
@@ -1328,6 +1415,15 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 ola_app_version_override=ola_app_v,
                 ola_user_agent_override=ola_ua,
             )
+        # v4.7.12 (#584) — hand every brand client the HA instance locale so
+        # market-scoped paths (MBB fs-car ``{country}``) can fall back to the
+        # user's real country instead of a hard "DE". Fail-soft; the Škoda
+        # keygen headers read the same attributes.
+        try:
+            setattr(self._cariad_client, "_ha_language", self.hass.config.language or "")
+            setattr(self._cariad_client, "_ha_country", self.hass.config.country or "")
+        except Exception:  # noqa: BLE001
+            pass
         # v2.10.4 — push the user-supplied OAuth client_id override
         # onto the underlying IDKAuth instance so the AuthConfigResolver
         # prepends it to the chain. No-op when override is None.
@@ -2894,6 +2990,8 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             if sub is None:
                 continue
             sub._test_cohort = cohort
+            # #584 — sub-connectors armed before the client got its locale.
+            sub._ha_country = getattr(client, "_ha_country", "") or ""
             probe = getattr(sub, "_probe_fetched_role_cohort", None)
             if cohort and callable(probe):
                 for _vin in sorted(getattr(sub, "mbb_no_legacy_vins", None) or ()):
@@ -3261,6 +3359,33 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             v for v in vins
             if str(v).upper() not in stored_upper and str(v).upper() not in attempted
         ]
+        # Capability gate (MyŠkoda 8.16.0): the app only offers key management when
+        # the car advertises PUBLIC_API_KEY_MANAGEMENT, so a car whose capability
+        # document is loaded and lacks it can't be enrolled — skip the POST instead of
+        # spending a 400 on it. Unknown capabilities (not fetched / fetch failed) keep
+        # the previous behaviour: we try and let the keygen probe record the outcome.
+        # NOT added to ``attempted`` — the capability cache refreshes, so a car that
+        # gains the capability later still gets minted without an HA restart.
+        gated_out = [
+            v for v in to_mint
+            if _capability_listed(
+                getattr(self, "vehicle_capabilities", {}).get(v),
+                _SKODA_KEY_MGMT_CAPABILITY,
+            )
+            is False
+        ]
+        if gated_out:
+            gated_upper = {str(v).upper() for v in gated_out}
+            to_mint = [v for v in to_mint if str(v).upper() not in gated_upper]
+            self._skoda_probe(
+                "skoda_official",
+                "gate: PUBLIC_API_KEY_MANAGEMENT capability not present for this car",
+            )
+            _LOGGER.debug(
+                "Škoda official key mint skipped for %d car(s): %s not advertised",
+                len(gated_out),
+                _SKODA_KEY_MGMT_CAPABILITY,
+            )
         if not to_mint:
             # Every VIN already has a key → nothing to mint; clear any manual-key repair.
             self._reconcile_skoda_manual_key_repair(vins)
@@ -7023,6 +7148,51 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             spin=spin,
         )
 
+    async def async_unlock_trunk(self, vin: str) -> None:
+        """Porsche-only "unlock tailgate" (``TRUNK_UNLOCK``). EXPERIMENTAL.
+
+        Grounding: My Porsche 20.26.37 ships ``TRUNK_UNLOCK`` as a real user
+        action (its own action sheet with a security disclaimer, and its own
+        ``TrunkCommandStatus`` Idle/Loading/CommandSuccess state machine — so
+        the app treats it as an access command in its own right, not as a
+        variant of UNLOCK). The command class has the same shape as
+        ``UnlockCommand`` and its payload model is ``EmptyPayload{spin}``,
+        which is why the client runs the identical S-PIN challenge/response
+        protocol. That protocol choice is the grounded assumption, NOT a live
+        capture — nobody has fired this at a real car yet.
+
+        Brand gate before anything else: only ``PorscheClient`` implements
+        ``command_unlock_trunk``. Dispatching on another brand would surface as
+        an ``AttributeError`` deep inside the command pipeline, which reads
+        like an integration bug; a ``feature_not_supported`` ServiceValidationError
+        says the honest thing instead. Capability gate next (``access``, see
+        ``cariad/_capabilities.py``) so a car whose account explicitly lacks
+        remote access does not get a doomed command sent to it — tri-state, so
+        only an explicit ``False`` blocks.
+        """
+        brand = str(self.entry.data.get(CONF_BRAND, "")).lower()
+        if brand != "porsche":
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="feature_not_supported",
+                translation_placeholders={"feature": "unlock_trunk"},
+            )
+        if self.command_capability_supported(vin, "command_unlock_trunk") is False:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="feature_not_supported",
+                translation_placeholders={"feature": "unlock_trunk"},
+            )
+        spin = self._spin_from_entry(vin)  # #759 — per-VIN override, else shared
+        if not spin:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="spin_required",
+            )
+        # No optimistic state: the integration has no trunk-open read field for
+        # Porsche, so there is nothing to flip forward and nothing to revert.
+        await self._cariad_cmd(vin, "command_unlock_trunk", spin=spin)
+
     def _ppe_climate_kwargs(self) -> dict[str, Any]:
         """v1.14.0 (#29) — PPE/PPC body-shape gate for climate commands.
 
@@ -8204,6 +8374,12 @@ class VagConnectCoordinator(DataUpdateCoordinator):
     _COMMAND_CLASS = {
         "command_lock": "lock",
         "command_unlock": "lock",
+        # Porsche tailgate unlock gets its OWN class, not "lock": My Porsche
+        # 20.26.37 tracks it in a separate ``TrunkCommandStatus`` state machine
+        # alongside the door-lock one, i.e. the backend runs the two in
+        # parallel. Folding it into "lock" would make a trunk press sit behind
+        # an in-flight lock/unlock for no backend reason.
+        "command_unlock_trunk": "trunk",
         "command_start_climate": "climate",
         "command_stop_climate": "climate",
         "command_set_climate_temperature": "climate",

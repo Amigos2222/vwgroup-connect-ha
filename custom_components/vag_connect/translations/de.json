@@ -1374,6 +1374,9 @@
       "reminder_tyre_repair_kit": {
         "name": "Reifen-Reparaturset (Erinnerung)"
       },
+      "brake_pads_prediction": {
+        "name": "Bremsbelag-Verschleißprognose"
+      },
       "exterior_color": {
         "name": "Außenfarbe"
       },
@@ -2178,6 +2181,16 @@
     }
   },
   "services": {
+    "unlock_trunk": {
+      "name": "Kofferraum entriegeln (Porsche, experimentell)",
+      "description": "Entriegelt nur die Heckklappe des angegebenen Porsche — die Türen bleiben verriegelt. Nur Porsche; andere Marken lehnen den Aufruf ab. S-PIN erforderlich. Experimentell: aus der My-Porsche-App abgeleitet und noch nicht an einem echten Fahrzeug verifiziert.",
+      "fields": {
+        "vin": {
+          "name": "VIN",
+          "description": "Die VIN des Fahrzeugs."
+        }
+      }
+    },
     "execute_vehicle_action": {
       "name": "Fahrzeug-Aktion ausführen",
       "description": "Vereinheitlichter Service der eine Fahrzeug-Aktion über ein Dropdown-Menü ausführt. Verhält sich identisch zum Aufruf des gleichnamigen Einzel-Services, ist aber in der Home Assistant Lovelace Service-Auswahl viel einfacher zu finden. Alle bestehenden Einzel-Services (vag_connect.lock, vag_connect.start_climatisation usw.) funktionieren unverändert weiter.",

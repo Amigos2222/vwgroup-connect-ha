@@ -33,6 +33,7 @@ on:
           - skoda
           - volkswagen_na
           - porsche
+          - porsche_row
       old_version:
         description: "Old version-name (e.g. 2.15.0)"
         required: true

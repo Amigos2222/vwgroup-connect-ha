@@ -1374,6 +1374,9 @@
       "reminder_tyre_repair_kit": {
         "name": "Renkaankorjaussarjan muistutus"
       },
+      "brake_pads_prediction": {
+        "name": "Jarrupalojen kulumisennuste"
+      },
       "exterior_color": {
         "name": "Ulkoväri"
       },
@@ -2143,6 +2146,16 @@
     }
   },
   "services": {
+    "unlock_trunk": {
+      "name": "Avaa takaluukku (Porsche, kokeellinen)",
+      "description": "Avaa vain valitun Porschen takaluukun — ovet pysyvät lukittuina. Vain Porsche; muut merkit hylkäävät kutsun. Vaatii S-PIN-koodin. Kokeellinen: johdettu My Porsche -sovelluksesta eikä vielä varmistettu oikealla autolla.",
+      "fields": {
+        "vin": {
+          "name": "VIN",
+          "description": "Ajoneuvon VIN."
+        }
+      }
+    },
     "start_climate_control": {
       "name": "Käynnistä ilmastoinnin ohjaus (laaja)",
       "description": "Käynnistää esilämmityksen/-jäähdytyksen yksittäisillä istuinlämmittimillä, lasinlämmityksellä, ilmastointitilalla ja avaustoiminnalla. Koskee vain Audia ja VW EU:ta (CARIAD BFF). Muut merkit putoavat perus-`start_climatisation`-palveluun. Kaikki hyötykuorman kentät paitsi `device_id` ovat valinnaisia - pois jätetyt kentät säilyttävät merkin oletusarvon.",

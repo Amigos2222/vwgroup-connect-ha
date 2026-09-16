@@ -11,7 +11,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import logging
 import uuid
-from typing import Any
+from typing import Any, Final
 
 from aiohttp import ClientSession
 
@@ -44,7 +44,17 @@ _BASE = "https://mysmob.api.connect.skoda-auto.cz"
 # mysmob create-key POST 400s for real users (n3roGit + indigomejor); the backend
 # may validate the key ``name`` (charset/length), and the app's names are simple
 # user-typed strings, so keep ours conservative to remove that as a 400 cause.
+# Confirmed against 8.16.0: the app validates a typed key name with the character
+# class [\p{L}\p{M}\p{N} _\-\p{So}] — letters, marks, digits, space, underscore,
+# hyphen and pictographs. Parentheses are NOT in it, so a name like
+# "Home Assistant (vag_connect)" would be rejected client-side by the app and is a
+# plausible server-side 400 too; the plain name below is inside the class.
 _OFFICIAL_KEY_NAME = "Home Assistant"
+# The allowed characters, as a Python-re equivalent of the app's ICU class above
+# (\p{So} has no stdlib-re counterpart and our name uses no pictographs, so the
+# check below covers exactly what we may send). Kept next to the constant so a
+# future rename is tested against the real rule instead of a memory of it.
+_KEY_NAME_ALLOWED = r"^[\w \-]+$"
 # The key-management route is only exercised by the MyŠkoda app (v8.16+); spoof the
 # real app User-Agent on these calls so a possible min-app-version gate is satisfied
 # (verbatim from the 8.16 APK; MySkoda/Android/{versionName}/{versionCode}).
@@ -61,6 +71,68 @@ _KEYGEN_APP_VERSION_NAME = "8.16.0"
 _KEYGEN_APP_VERSION_CODE = "260821007"
 
 _COMBUSTION_ENGINE_TYPES = ("gasoline", "petrol", "diesel", "cng", "lpg")
+
+# MyŠkoda 8.16.0 (vc 260821007) — the capability id the app gates its battery
+# State-of-Health card on (net-new in the 8.16.0 ``CapabilityId`` enum, verified
+# in the DEX string pool). Used to skip the battery-health read on a car whose
+# capability list is known and does not advertise it.
+_BATTERY_HEALTH_CAP: Final = "BATTERY_HEALTH_STATE"
+
+
+def _api_key_listing_extras(body: dict[str, Any]) -> dict[str, Any]:
+    """Flatten an ``ApiKeysResponseDto`` (MyŠkoda 8.16.0) into derived entries.
+
+    The list route answers ``{maxKeys, vehicleKeys:[{vin, keysRemaining, keys:[{id,
+    name, status, validUntil}]}], links:{apiDocumentation, termsAndConditions}}``.
+    Walking that nested shape at every call site invites one caller to miss a half,
+    so the per-key list and the two links are derived here once. Pure + total: a
+    malformed half yields an empty/None member instead of raising, because this sits
+    on the fail-soft auto-enroll path. Key SECRETS never appear in this response —
+    only the create call returns one — so nothing sensitive is copied out."""
+    keys_by_vin: dict[str, list[dict[str, Any]]] = {}
+    raw_vehicles = body.get("vehicleKeys")
+    for vk in raw_vehicles if isinstance(raw_vehicles, list) else []:
+        if not isinstance(vk, dict) or vk.get("vin") is None:
+            continue
+        raw_keys = vk.get("keys")
+        keys_by_vin[str(vk["vin"]).upper()] = [
+            {
+                "id": k.get("id"),
+                "name": k.get("name"),
+                "status": k.get("status"),
+                "validUntil": k.get("validUntil"),
+            }
+            for k in (raw_keys if isinstance(raw_keys, list) else [])
+            if isinstance(k, dict)
+        ]
+    links = body.get("links")
+    links = links if isinstance(links, dict) else {}
+
+    def _url(value: Any) -> str | None:
+        return value.strip() if isinstance(value, str) and value.strip() else None
+
+    return {
+        "keys_by_vin": keys_by_vin,
+        "api_documentation_url": _url(links.get("apiDocumentation")),
+        "terms_and_conditions_url": _url(links.get("termsAndConditions")),
+    }
+
+
+def _api_key_statuses(keys_by_vin: dict[str, list[dict[str, Any]]]) -> list[str]:
+    """Distinct non-empty key ``status`` strings across every listed key, sorted.
+
+    The 8.16.0 statics carry no status vocabulary (the app just renders the string),
+    so we do not know which values mean active / expired / revoked. We therefore only
+    OBSERVE them — never act on one, and never auto-delete a key that looks stale.
+    Status strings are backend enum labels, so they are safe to log and to put in a
+    diagnostics probe; VINs and ids stay out of both."""
+    seen = {
+        k["status"].strip()
+        for keys in keys_by_vin.values()
+        for k in keys
+        if isinstance(k.get("status"), str) and k["status"].strip()
+    }
+    return sorted(seen)
 
 
 def _is_driving_from_readiness(readiness: Any) -> bool:
@@ -350,6 +422,15 @@ class SkodaClient(CariadBaseClient):
         # routing (get_status below); the other modes are enforced coordinator-side
         # (merge / failover / auto-enrol gating). Default "auto".
         self._official_mode: str = "auto"
+        # Per-VIN capability-id set, learned from the garage document every time
+        # ``get_capabilities`` runs (the coordinator refreshes it 24-hourly). Lets
+        # a capability-gated read skip the call on a car that does not advertise
+        # the feature. A VIN missing here means "unknown", not "unsupported".
+        self._capability_ids: dict[str, set[str]] = {}
+        # VINs whose battery-health route answered 403/404 once. Remembered for
+        # the client's lifetime so we stop re-asking a car that never serves it
+        # (same cheap-to-relearn memo shape as ``_powertrain`` above).
+        self._no_battery_health: set[str] = set()
 
     def set_official_mode(self, mode: str) -> None:
         """Set the Škoda official-API source mode (CONF_SKODA_OFFICIAL_MODE)."""
@@ -517,11 +598,29 @@ class SkodaClient(CariadBaseClient):
         return None
 
     async def list_api_keys(self) -> dict[str, Any] | None:
-        """List official-API keys + remaining per-VIN quota (``maxKeys`` 5). Returns
-        the response dict (``{maxKeys, vehicleKeys:[{vin, keysRemaining}]}``) or
-        None. Returns no key secrets. Used to check quota before minting. Records a
-        PII-free ``skoda_official_keygen_list`` probe outcome (HTTP status + counts
-        only) so diagnostics show whether the live list route answers."""
+        """List the account's official-API keys, per-VIN quota and the doc links.
+
+        ``GET /api/v2/public-api-keys`` → ``ApiKeysResponseDto`` (MyŠkoda 8.16.0,
+        cz.myskoda.api.bff_public_api_keys.v2)::
+
+            {"maxKeys": 5,
+             "vehicleKeys": [{"vin", "keysRemaining",
+                              "keys": [{"id", "name", "status", "validUntil"}]}],
+             "links": {"apiDocumentation", "termsAndConditions"}}
+
+        The earlier docstring claimed the response carries no per-key list — it does
+        (``vehicleKeys[].keys[]``, with id/name/status/validUntil). What it never
+        carries is the key SECRET; only the create call returns that. The route also
+        takes an optional ``?vin=`` filter, which we deliberately omit: both callers
+        (quota check before minting, and the multi-integration detection) want the
+        account-wide picture.
+
+        Returns the body with every original key/value intact, plus derived entries
+        so callers need not walk the nested shape: ``keys_by_vin`` (upper-cased VIN →
+        the per-key dicts) and ``api_documentation_url`` /
+        ``terms_and_conditions_url``. None on any failure. Records a PII-free
+        ``skoda_official_keygen_list`` probe (HTTP status, counts, and the status
+        vocabulary observed) so diagnostics show what the live route answers."""
         if not self.can_mint_official_key:
             return None
         try:
@@ -540,19 +639,39 @@ class SkodaClient(CariadBaseClient):
             _LOGGER.debug("official-API key list failed: %s", type(err).__name__)
             return None
         if isinstance(body, dict):
+            extras = _api_key_listing_extras(body)
+            keys_by_vin: dict[str, list[dict[str, Any]]] = extras["keys_by_vin"]
+            statuses = _api_key_statuses(keys_by_vin)
             vk = body.get("vehicleKeys")
             self.probe_outcomes["skoda_official_keygen_list"] = (
                 f"GET 2xx maxKeys={body.get('maxKeys')} "
-                f"vins={len(vk) if isinstance(vk, list) else '?'}"
+                f"vins={len(vk) if isinstance(vk, list) else '?'} "
+                f"keys={sum(len(k) for k in keys_by_vin.values())} "
+                f"statuses=[{','.join(statuses)}]"
             )
-            return body
+            if statuses:
+                # We have no grounded status vocabulary (see _api_key_statuses), so an
+                # existing key that looks stale is OBSERVED, never deleted: a wrong
+                # guess would burn a slot of the 5-per-VIN quota or kill a key the user
+                # still uses. DEBUG-only, enum labels — no VIN, id or secret.
+                _LOGGER.debug(
+                    "official-API key statuses listed: %s", ", ".join(statuses)
+                )
+            return {**body, **extras}
         self.probe_outcomes["skoda_official_keygen_list"] = "GET 2xx non-dict"
         return None
 
     async def delete_api_key(self, key_id: str) -> bool:
         """Delete one official-API key by id (to free a slot before re-minting an
-        expired one). True on success. Only keys we minted are deletable — the list
-        endpoint returns no foreign ids."""
+        expired one). ``DELETE /api/v2/public-api-keys/{id}`` (MyŠkoda 8.16.0). True
+        on success.
+
+        No caller — deliberately. The list route DOES return ids for every key on the
+        account (``vehicleKeys[].keys[].id``), including keys the MyŠkoda app itself
+        created, so an id being visible is no proof the key is ours; and the key
+        ``status`` vocabulary is ungrounded, so "expired-looking" cannot be decided.
+        Deleting therefore stays a deliberate call with an id the caller knows it
+        minted, never an automatic cleanup."""
         if not self.can_mint_official_key or not key_id:
             return False
         try:
@@ -961,13 +1080,21 @@ class SkodaClient(CariadBaseClient):
         items = caps.get("capabilities") if isinstance(caps, dict) else None
         if not isinstance(items, list):
             return {}
-        return {
-            "capabilities": [
-                {"id": c.get("id"), "statuses": c.get("statuses") or []}
-                for c in items
-                if isinstance(c, dict) and isinstance(c.get("id"), str)
-            ]
-        }
+        entries: list[dict[str, Any]] = [
+            {"id": c.get("id"), "statuses": c.get("statuses") or []}
+            for c in items
+            if isinstance(c, dict) and isinstance(c.get("id"), str)
+        ]
+        # Remember the advertised ids so a capability-gated read (battery-health)
+        # can decide for itself whether to call at all: the client is the only
+        # layer that knows that read exists, and the coordinator's capability
+        # cache is not reachable from here. The hasattr guard mirrors
+        # ``coordinator.refresh_capabilities`` — it keeps a client assembled
+        # without ``__init__`` from turning a cache write into a crash.
+        if not hasattr(self, "_capability_ids"):
+            self._capability_ids = {}
+        self._capability_ids[vin] = {str(e["id"]) for e in entries}
+        return {"capabilities": entries}
 
     async def get_widget(self, vin: str) -> dict[str, Any]:
         """v1.20.0 (Bundle 2 Phase A) — Skoda lightweight widget endpoint.
@@ -1133,6 +1260,72 @@ class SkodaClient(CariadBaseClient):
             return {}
         return data if isinstance(data, dict) else {}
 
+    async def get_battery_health(self, vin: str) -> dict[str, Any] | None:
+        """MyŠkoda 8.16.0 (vc 260821007) — battery State-of-Health read.
+
+        Endpoint: ``GET api/v1/vehicle-information/{vin}/battery-health`` — a
+        net-new Retrofit route on the existing ``VehicleInformationApi``, so it
+        rides the same mysmob host and the same Bearer as its ``/renders`` and
+        ``/equipment`` siblings above. Response is ``BatteryHealthStatusDto``:
+
+            {
+              "status": "HEALTHY" | "NEEDS_MAINTENANCE" | "UNAVAILABLE",
+              "remainingCapacity": 92,          // int | null (percent)
+              "carCapturedTimestamp": "2026-09-01T10:00:00Z"
+            }
+
+        Capability-aware but deliberately permissive: the app gates its SoH card
+        on the ``BATTERY_HEALTH_STATE`` capability, so we skip the call when THIS
+        car's advertised list is known and lacks it. An unknown list (no
+        capabilities read yet, portal mode, a document that failed to load) still
+        tries once — wrongly skipping would hide a real reading, which is the
+        worse failure.
+
+        Soft-fail: a 403/404, any other transport error, or a non-JSON body →
+        ``None``. A 403/404 additionally parks the VIN for this client's lifetime
+        so a car that does not serve the route is not re-asked every poll (same
+        memo idea as the ``_powertrain`` charging skip).
+        """
+        # Same hasattr guard as ``get_capabilities``: a client assembled without
+        # ``__init__`` must degrade to "no memo yet", not to an AttributeError.
+        if not hasattr(self, "_no_battery_health"):
+            self._no_battery_health = set()
+        if vin in self._no_battery_health:
+            return None
+        _known: dict[str, set[str]] = getattr(self, "_capability_ids", {})
+        advertised = _known.get(vin)
+        if advertised is not None and _BATTERY_HEALTH_CAP not in advertised:
+            _LOGGER.debug(
+                "Škoda battery-health: %s does not advertise %s — skipping",
+                vin[-6:], _BATTERY_HEALTH_CAP,
+            )
+            return None
+        try:
+            data = await self._get(
+                f"{_BASE}/api/v1/vehicle-information/{vin}/battery-health",
+            )
+        except APIError as err:
+            if err.status in (403, 404):
+                self._no_battery_health.add(vin)
+            _LOGGER.debug(
+                "Škoda battery-health read failed for %s: HTTP %s",
+                vin[-6:], err.status,
+            )
+            return None
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug(
+                "Škoda battery-health read failed for %s: %s",
+                vin[-6:], type(err).__name__,
+            )
+            return None
+        if not isinstance(data, dict):
+            _LOGGER.debug(
+                "Škoda battery-health: unexpected body type %s for %s",
+                type(data).__name__, vin[-6:],
+            )
+            return None
+        return data
+
     async def get_status(self, vin: str) -> VehicleData:
         """Fetch full status from Škoda API."""
         # v2.12.6 — EU Data Act portal mode (read-only fallback). Route the
@@ -1219,12 +1412,17 @@ class SkodaClient(CariadBaseClient):
             self._get(
                 f"{_BASE}/api/v1/trip-statistics/{vin}/single-trips?timezone=GMT"
             ),
+            # MyŠkoda 8.16.0 (vc 260821007) — battery State-of-Health. Handles its
+            # own capability gate and soft-fail (see ``get_battery_health``), so it
+            # returns None rather than raising into this gather.
+            self.get_battery_health(vin),
             return_exceptions=True,
         )
         (
             status, charging, ac, parking, driving_range,
             maintenance, readiness, sw_update, widget, driving_score,
             health_v1, trip_stats, charging_stats_v2, single_trips,
+            battery_health,
         ) = results
 
         # v1.9.0 — Vehicle Data Scout opt-in. Stash raw responses keyed by
@@ -2043,6 +2241,28 @@ class SkodaClient(CariadBaseClient):
             notes = sw_update.get("releaseNotesUrl")
             if isinstance(notes, str) and notes:
                 d.ota_release_notes_url = notes
+
+        # ── Battery State-of-Health (MyŠkoda 8.16.0, vc 260821007) ───────────
+        # BatteryHealthStatusDto.remainingCapacity is the share of the original
+        # capacity left, i.e. exactly what ``battery_soh_pct`` means on the other
+        # brands (VW/Audi fill it from the BFF batteryHealthState sub-job as a
+        # rounded int) — so mirror that int rounding here instead of inventing a
+        # second unit. Out-of-range values are dropped rather than published: a
+        # sentinel would otherwise show up as a nonsense percentage. The
+        # qualitative verdict rides along as ``battery_health_status`` and is
+        # surfaced as an attribute of that same sensor, not a second entity.
+        if isinstance(battery_health, dict):
+            _cap_raw = battery_health.get("remainingCapacity")
+            # ``safe_float`` maps bools to 1.0/0.0; the DTO says int|null, so a
+            # bool here is a schema surprise, not a 1 % battery.
+            _cap_pct = None if isinstance(_cap_raw, bool) else safe_float(_cap_raw)
+            if _cap_pct is not None and 0 <= _cap_pct <= 100:
+                d.battery_soh_pct = int(round(_cap_pct))
+            _bh_status = battery_health.get("status")
+            if isinstance(_bh_status, str) and _bh_status.strip():
+                # Kept verbatim (no enum normalisation) so a value we have not
+                # catalogued still reaches the user instead of being dropped.
+                d.battery_health_status = _bh_status.strip()
 
         # ── Widget endpoint (v1.20.0 Bundle 2 Phase A) ────────────────────────
         # Lightweight per-tick payload from /v2/widgets/vehicle-status/{vin}

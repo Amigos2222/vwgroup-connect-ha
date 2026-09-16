@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Every Škoda capability-id is a real MySkoda ``CapabilityId`` enum member.
 
-Source of truth: the MySkoda 8.15.0 APK (cz.skodaauto.myskoda), DEX class
-``Lnj0/b;`` (the CapabilityId enum), dumped from its own <clinit> via androguard
-— NOT grepped strings, and NOT guessed. This frozenset is that enum verbatim
-(156 members). The guard test below fails the build if anyone re-introduces a
+Source of truth: the MySkoda APK (cz.skodaauto.myskoda), DEX class ``Lnj0/b;``
+(the CapabilityId enum), dumped from its own <clinit> via androguard — NOT
+grepped strings, and NOT guessed. This frozenset is that enum verbatim: 156
+members in 8.15.0, plus the two 8.16.0 (vc 260821007) additions
+``BATTERY_HEALTH_STATE`` and ``PUBLIC_API_KEY_MANAGEMENT`` = 158. The guard test below fails the build if anyone re-introduces a
 guessed id (like the old ``air-conditioning`` / ``DRIVING_SCORE`` / ``READINESS``
 that never matched what the backend actually sends), because a wrong id makes
 ``vehicle_supports_capability`` report a real feature "absent" once the per-VIN
@@ -19,8 +20,10 @@ import pytest
 
 from custom_components.vag_connect.cariad._capabilities import CAPABILITY_MAP, cap_id_for
 
-# MySkoda 8.15.0 CapabilityId enum (Lnj0/b;), androguard-verified.
+# MySkoda 8.16.0 CapabilityId enum (Lnj0/b;), androguard-verified.
 MYSKODA_CAPABILITY_IDS = frozenset({
+    # 8.16.0 additions over 8.15.0's 156.
+    "BATTERY_HEALTH_STATE", "PUBLIC_API_KEY_MANAGEMENT",
     "ACCESS", "ACCESS_WITHOUT_SPIN", "ACCIDENT_DAMAGE_MANAGEMENT", "ACTIVATED",
     "ACTIVE_VENTILATION", "AIR_CONDITIONING", "AIR_CONDITIONING_HEATING_SOURCE_AUXILIARY",
     "AIR_CONDITIONING_HEATING_SOURCE_ELECTRIC", "AIR_CONDITIONING_SAVE_AND_ACTIVATE",
@@ -70,7 +73,7 @@ MYSKODA_CAPABILITY_IDS = frozenset({
 
 
 def test_vocabulary_has_expected_size():
-    assert len(MYSKODA_CAPABILITY_IDS) == 156
+    assert len(MYSKODA_CAPABILITY_IDS) == 158
 
 
 def _flatten(value):

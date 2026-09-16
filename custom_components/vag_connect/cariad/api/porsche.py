@@ -14,6 +14,7 @@ import hashlib
 import logging
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from aiohttp import ClientSession, ClientTimeout
@@ -31,7 +32,7 @@ _X_CLIENT   = "41843fb4-691d-4970-85c7-2673e8ecef40"
 # #1337 (v4.7.8) — same plain library User-Agent the auth layer now sends (the
 # reference client uses ONE lib UA for both login and API reads); keep them
 # identical so Porsche sees a single consistent client.
-_USER_AGENT = "vag-connect-ha/4.7.11 (+https://github.com/its-me-prash/vwgroup-connect-ha)"
+_USER_AGENT = "vag-connect-ha/4.7.12 (+https://github.com/its-me-prash/vwgroup-connect-ha)"
 
 # v1.25.0 PR-B: storm-protection constants (mirror of base.py)
 _REFRESH_MAX_PER_HOUR = 3
@@ -69,14 +70,20 @@ _COMMAND_POLL_TIMEOUT_S = 20
 #      likely why TPMS sensors have been reporting nothing: the previous key
 #      was requesting a measurement that doesn't exist.
 # b20 follow-up (2026-09-08) — the 29 other genuinely-new keys that dump
-# surfaced (+ CHARGING_SESSION_HISTORY, ROW-only) ARE requested below even
-# though none of them are parsed into a VehicleData field yet. Requesting
+# surfaced ARE requested below even though most of them are still not parsed
+# into a VehicleData field. Requesting
 # an unparsed key is zero-risk (this project's parser only ever reads keys
 # it explicitly knows about; anything else just sits unused in the raw
 # response) and it populates ``last_raw_responses`` (the Vehicle Data
 # Scout capture) with the real payload shape — the fastest path to
 # eventually building a sensor for any of these is a real user's
 # diagnostics export showing what actually comes back, not guessing.
+# CORRECTION (v4.7.12) — that b20 note called CHARGING_SESSION_HISTORY
+# "ROW-only". Wrong, and it was the only reason the key looked unparseable
+# for a chunk of the fleet: the measurement enum of My Porsche 20.26.37
+# carries it in the PCNA flavour of the build as well as the ROW one, with
+# an identical DTO. It is now parsed — see
+# ``_parse_charging_session_history`` and ``get_status``.
 # Deliberately still NOT requested:
 #   - MDK_ACTIVATION_STATE/MDK_CARD_STATE/MDK_PAIRING_PASSWORD/
 #     MDK_PAIRING_STATE (Mobile Digital Key pairing) — MDK_PAIRING_PASSWORD
@@ -119,6 +126,17 @@ _MEASUREMENTS = (
     "OTA_UPDATE_DETAILS", "SPEED_ALARMS", "SPEED_ALARMS_HISTORY",
     "TIMEZONE", "TRIP_STATISTICS_MONTHLY_REPORT", "VALET_ALARM",
     "VALET_ALARM_HISTORY",
+    # v4.7.12 — present in BOTH the 20.26.31 and the 20.26.37 measurement
+    # enums (so not a build-gated key that could 400 an older car), and
+    # raw-capture only: nothing below is parsed into a VehicleData field yet.
+    # The trip-statistics family is the obvious next sensor candidate but its
+    # inner value shape has never been captured from a live car. (Damper /
+    # tyre-sealant / tyre-pressure-warning names are NOT measurement keys —
+    # they are values inside SERVICE_PREDICTIONS / INSTRUMENT_CLUSTER_ALERTS,
+    # both requested above — so they are deliberately not listed here.)
+    "TRIP_STATISTICS_SHORT_TERM", "TRIP_STATISTICS_SHORT_TERM_HISTORY",
+    "TRIP_STATISTICS_LONG_TERM", "TRIP_STATISTICS_LONG_TERM_HISTORY",
+    "TRIP_STATISTICS_CYCLIC", "TRIP_STATISTICS_CYCLIC_HISTORY",
 )
 
 
@@ -184,6 +202,130 @@ def _mf_number(value: Any, candidate_keys: tuple[str, ...]) -> float | None:
     if isinstance(src, (int, float)) and not isinstance(src, bool):
         return float(src)
     return None
+
+
+# ── v4.7.12 — CHARGING_SESSION_HISTORY → charging-session fields ─────────────
+# GROUNDING: the ``CHARGING_SESSION_HISTORY`` measurement of My Porsche
+# 20.26.37 (verified in both flavours of that build; its DTO is unchanged from
+# 20.26.31). Value shape:
+#   {"lastModified": "<ISO-8601>",
+#    "list": [{"id", "startChargingDateTimeWithOffset",
+#              "endChargingDateTimeWithOffset", "plugInDateTimeWithOffset",
+#              "plugOutDateTimeWithOffset", "netDurationS": int,
+#              "chargeType": "AC"|"DC"|"AWC"|"UNKNOWN",
+#              "averageChargingPowerkW": float, "peakChargingPowerkW": float,
+#              "totalChargedEnergykWh": float, "startSoC": int,
+#              "endSoC": int}, ...]}
+#
+# WHY sort instead of taking ``list[0]``: the DTO documents no ordering and
+# the app itself sorts before rendering, so "newest" has to be derived from
+# the start stamp — trusting payload order would silently publish a
+# three-week-old session as "last charge" whenever the backend reorders.
+#
+# WHY no ``total_charged_energy_kwh``: the list is a rolling 28-day window, so
+# summing it is NOT a lifetime counter. Feeding that into the
+# TOTAL_INCREASING energy sensor would make its long-term statistics jump
+# backwards every time an old session ages out of the window — worse than
+# having no cumulative sensor for Porsche at all.
+
+
+def _session_start_ts(session: dict[str, Any]) -> float:
+    """Sortable epoch seconds from a session's start stamp.
+
+    A missing/unparseable stamp sorts oldest so a malformed entry can never
+    displace the genuinely newest session.
+    """
+    raw = session.get("startChargingDateTimeWithOffset")
+    if not isinstance(raw, str) or not raw:
+        return float("-inf")
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return float("-inf")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+def _session_soc(value: Any) -> int | None:
+    """startSoC / endSoC → 0..100 int, or ``None`` for anything implausible."""
+    pct = _mf_number(value, ())
+    if pct is None or not 0.0 <= pct <= 100.0:
+        return None
+    return int(round(pct))
+
+
+def _compact_charging_session(session: dict[str, Any]) -> dict[str, Any] | None:
+    """One history entry → the cross-brand compact session dict.
+
+    ``started_at``/``kwh``/``duration_min`` are exactly the keys Skoda's
+    ``recent_charging_sessions`` uses, so the existing sensor attributes read
+    a Porsche list unchanged; the three Porsche-only extras ride along because
+    the field is a plain ``list[dict[str, Any]]``. ``None`` when the entry
+    carries nothing usable at all (the caller drops it).
+    """
+    started_at = session.get("startChargingDateTimeWithOffset")
+    if not isinstance(started_at, str) or not started_at:
+        started_at = None
+    kwh = _mf_number(session.get("totalChargedEnergykWh"), ())
+    peak_kw = _mf_number(session.get("peakChargingPowerkW"), ())
+    # netDurationS is the charging time net of interruptions; HA's
+    # last_charging_session_duration_min sensor is in minutes.
+    seconds = _mf_number(session.get("netDurationS"), ())
+    duration_min = (
+        int(round(seconds / 60.0))
+        if seconds is not None and seconds >= 0.0
+        else None
+    )
+    entry: dict[str, Any] = {
+        "started_at": started_at,
+        "kwh": round(kwh, 2) if kwh is not None else None,
+        "duration_min": duration_min,
+        "start_soc": _session_soc(session.get("startSoC")),
+        "end_soc": _session_soc(session.get("endSoC")),
+        "peak_kw": round(peak_kw, 2) if peak_kw is not None else None,
+    }
+    if all(value is None for value in entry.values()):
+        return None
+    return entry
+
+
+def _parse_charging_session_history(
+    value: Any,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """CHARGING_SESSION_HISTORY value → (compact sessions, newest charge type).
+
+    Sessions come back newest-first and capped at 10 (attribute payload, not
+    state — the HA recorder stores it on every poll). The charge type is
+    returned separately because the compact dict deliberately mirrors Skoda's
+    key set. ``"UNKNOWN"`` is reported as ``None``: publishing it as a sensor
+    state would look like a real current type.
+    """
+    if not isinstance(value, dict):
+        return [], None
+    raw_list = value.get("list")
+    if not isinstance(raw_list, list):
+        return [], None
+
+    ordered = sorted(
+        (item for item in raw_list if isinstance(item, dict)),
+        key=_session_start_ts,
+        reverse=True,
+    )
+    sessions: list[dict[str, Any]] = []
+    charge_type: str | None = None
+    for item in ordered:
+        compact = _compact_charging_session(item)
+        if compact is None:
+            continue
+        if not sessions:
+            raw_type = item.get("chargeType")
+            if isinstance(raw_type, str) and raw_type.upper() not in ("", "UNKNOWN"):
+                charge_type = raw_type.upper()
+        sessions.append(compact)
+        if len(sessions) == 10:
+            break
+    return sessions, charge_type
 
 
 class PorscheClient:
@@ -707,6 +849,27 @@ class PorscheClient:
                 )
                 if days is not None and -3650 <= days <= 3650:
                     setattr(d, attr, int(round(days)))
+
+            # ── Charging-session history (v4.7.12) ────────────────────────
+            # Requested since b20 but raw-capture only until now. The
+            # measurement's 28-day window feeds the last-session sensors that
+            # Skoda/SEAT/CUPRA already drive, plus the recent-sessions
+            # attribute list. See ``_parse_charging_session_history`` for the
+            # DTO grounding and for why no cumulative kWh total is derived.
+            sessions, session_type = _parse_charging_session_history(
+                m.get("CHARGING_SESSION_HISTORY"),
+            )
+            if sessions:
+                d.recent_charging_sessions = sessions
+                newest = sessions[0]
+                if newest["kwh"] is not None:
+                    d.last_charging_session_kwh = newest["kwh"]
+                if newest["duration_min"] is not None:
+                    d.last_charging_session_duration_min = newest["duration_min"]
+                if newest["started_at"] is not None:
+                    d.last_charging_session_start = newest["started_at"]
+                if session_type is not None:
+                    d.last_charging_session_current_type = session_type
 
         # v2.2.1 Phase 8 PR #5 — cross-brand car_type derivation.
         # Porsche PPA doesn't ship a direct `carType` enum — derive

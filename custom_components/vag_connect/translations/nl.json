@@ -1374,6 +1374,9 @@
       "reminder_tyre_repair_kit": {
         "name": "Bandenreparatieset-herinnering"
       },
+      "brake_pads_prediction": {
+        "name": "Voorspelling remblokslijtage"
+      },
       "exterior_color": {
         "name": "Exterieurkleur"
       },
@@ -2143,6 +2146,16 @@
     }
   },
   "services": {
+    "unlock_trunk": {
+      "name": "Kofferbak ontgrendelen (Porsche, experimenteel)",
+      "description": "Ontgrendelt alleen de achterklep van de opgegeven Porsche — de deuren blijven vergrendeld. Alleen Porsche; andere merken weigeren de aanroep. Vereist de S-PIN. Experimenteel: afgeleid uit de My Porsche-app en nog niet geverifieerd op een echte auto.",
+      "fields": {
+        "vin": {
+          "name": "VIN",
+          "description": "VIN van het voertuig."
+        }
+      }
+    },
     "start_climate_control": {
       "name": "Klimaatregeling starten (uitgebreid)",
       "description": "Start het voorklimatiseren met individuele stoelverwarming, ruitverwarming, klimaatmodus en gedrag bij ontgrendeling. Alleen van toepassing op Audi en VW EU (CARIAD BFF). Andere merken vallen terug op de basisservice `start_climatisation`. Alle payload-velden behalve `device_id` zijn optioneel — weggelaten velden behouden de standaardwaarde van het merk.",

@@ -71,12 +71,25 @@
       "ola_enforcement_known": false
     },
     "porsche": {
-      "display_name": "Porsche (My Porsche)",
+      "_comment": "PCNA build (North America). The rest-of-world build ships as a separate package — see the porsche_row entry below.",
+      "display_name": "Porsche (My Porsche, North America)",
       "package_id": "com.porsche.one",
       "sources": {
         "apkmirror_slug": "dr-ing-h-c-f-porsche-ag/my-porsche",
         "uptodown_subdomain": null,
         "apkcombo_slug": "my-porsche/com.porsche.one"
+      },
+      "expected_backend": "ppa",
+      "ola_enforcement_known": false
+    },
+    "porsche_row": {
+      "_comment": "Rest-of-world My Porsche. EU users run this package, not com.porsche.one — so a PCNA-only reading was never the version our EU reporters are on. At 20.26.37 (versionCode 188460) both builds are the same code apart from package-name strings and one Porsche-Card availability path, but that is a per-version finding, not a standing guarantee: tracking both is what makes a future split visible instead of silent. apkmirror_slug is null on purpose — the PCNA slug must NOT be reused here, it would report the NA version as this brand's.",
+      "display_name": "Porsche (My Porsche, rest-of-world)",
+      "package_id": "de.porsche.one",
+      "sources": {
+        "apkmirror_slug": null,
+        "uptodown_subdomain": null,
+        "apkcombo_slug": "my-porsche/de.porsche.one"
       },
       "expected_backend": "ppa",
       "ola_enforcement_known": false
