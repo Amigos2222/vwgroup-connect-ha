@@ -1,0 +1,39 @@
+meta {
+  name: GET vehicle-information battery-health (State of Health)
+  type: http
+  seq: 56
+}
+
+get {
+  url: {{base_url}}/api/v1/vehicle-information/{{vin}}/battery-health
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{access_token}}
+}
+
+headers {
+  Accept: application/json
+}
+
+docs {
+  v4.7.12 — Škoda HV battery State-of-Health read.
+  Source: MyŠkoda 8.16.0 (versionCode 260821007), new Retrofit route on
+  VehicleInformationApi (same host + Bearer as /renders and /equipment).
+  App-side gated on the capability id BATTERY_HEALTH_STATE.
+
+  Response shape (BatteryHealthStatusDto):
+    {
+      "status": "HEALTHY" | "NEEDS_MAINTENANCE" | "UNAVAILABLE",
+      "remainingCapacity": 96,          // int, may be null
+      "carCapturedTimestamp": "2026-09-16T10:12:00Z"
+    }
+
+  Use case: battery_soh_pct (0..100) + health_status attribute on the
+  existing SoH sensor. 403/404 memoised per VIN for the client lifetime.
+
+  Implementation: SkodaClient.get_battery_health() in cariad/api/skoda.py,
+  consumed in get_status() next to the software-update read.
+}
