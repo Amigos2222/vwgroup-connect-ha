@@ -10,7 +10,8 @@ Two adopted parity behaviours share this file because they serve the same goal
      ``entity_picture`` across BOTH backends: the vgql (Audi/VW connected)
      media-id keys AND the vw.de ``view_direction_angle`` keys. ``best_url``
      delegates to it, so every entity_picture consumer inherits the choice with
-     zero new entities. Mirrors the hero-render selection of myskoda/audiconnect.
+     zero new entities. Mirrors the hero-render selection of the Škoda/Audi
+     community integrations.
 
   2. Per-VIN in-memory TTL caches for the STATIC vw.de reads — master data
      (24 h) and the exterior render URL list (6 h) — which used to run on EVERY

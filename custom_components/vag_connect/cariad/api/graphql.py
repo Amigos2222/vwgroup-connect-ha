@@ -438,8 +438,8 @@ class VehicleImageFetcher:
         tier 2 ¾-angle/front, tier 3 the curated vgql media-id order (so a
         connected Audi still gets its best media id — its codes contain none of
         the tier 1/2 needles and fall straight through), tier 4 any first value.
-        Mirrors the hero-render selection approach of the myskoda/audiconnect
-        image handling; reimplemented here, no code copied.
+        Mirrors the hero-render selection approach of the Škoda and Audi
+        community integrations' image handling; reimplemented here, no code copied.
         """
         if not image_urls:
             return None

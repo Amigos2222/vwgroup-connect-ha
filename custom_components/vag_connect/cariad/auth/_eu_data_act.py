@@ -3299,7 +3299,7 @@ def map_dataset_to_vehicle_data(
     _bonnet_lock = _to_int(first("locked_state_front_engine_bonnet"))
     if _bonnet_lock in (2, 3):
         d.bonnet_locked = _bonnet_lock == 2
-    # v4.7.11 (grounded on mikrohard/hass-vw-eu-data-act #53, 2026-09-12): a live
+    # v4.7.11 (grounded on a competing EU-Data-Act reader's issue #53, 2026-09-12): a live
     # SEAT/CUPRA delivery showed safe_state_front_engine_bonnet=3 while the bonnet
     # was CLOSED (open_state_front_engine_bonnet=3=closed in that same dataset).
     # The dict documents no safe(2) for bonnet/tailgate, so folding their "3" into

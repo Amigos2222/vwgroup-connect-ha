@@ -101,7 +101,7 @@ def test_closures_secured_ignores_unsupported() -> None:
 
 
 def test_closures_secured_ignores_bonnet_and_tailgate() -> None:
-    # v4.7.11 (mikrohard #53): bonnet/tailgate document no safe(2), and a live
+    # v4.7.11 (competing EU-Data-Act reader, issue #53): bonnet/tailgate document no safe(2), and a live
     # SEAT/CUPRA delivery showed a CLOSED bonnet reporting safe_state=3. A closed
     # bonnet/tailgate reporting "3" must NOT flip closures_secured to False while
     # every door is safe.
