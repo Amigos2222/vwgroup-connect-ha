@@ -1,7 +1,7 @@
 # App Atlas — Porsche (My Porsche)
 
 > **Auto-generated** by `.github/workflows/app-atlas-builder.yml` ·
-> Last refreshed: 2026-09-04
+> Last refreshed: 2026-09-16
 
 ## Identity
 
@@ -22,9 +22,9 @@
 
 | | |
 |---|---|
-| Latest version-name | `20.26.36` |
+| Latest version-name | `20.26.37` |
 | Source that responded | `apkmirror` |
-| Previously cached version | `20.26.34` |
+| Previously cached version | `20.26.36` |
 | Changed since last run? | **YES** |
 
 
