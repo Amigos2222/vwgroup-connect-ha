@@ -22,6 +22,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
+    DEGREE,
     PERCENTAGE,
     EntityCategory,
     UnitOfElectricCurrent,
@@ -1599,6 +1600,20 @@ SENSOR_DESCRIPTIONS: tuple[VagSensorDescription, ...] = (
         icon="mdi:gas-station-outline",
         suggested_display_precision=1,
         condition="combustion",
+    ),
+    # v4.7.11 (#1378) — the portal's ``heading`` companion to ``persLocation`` has
+    # been parsed since 4.7.6 (and the 4.7.6 note said it came through as a
+    # sensor) but never had an entity. Scout policy: every mapped value gets
+    # one. Disabled by default — a compass bearing is niche on a dashboard;
+    # the device tracker carries the position itself.
+    VagSensorDescription(
+        key="heading",
+        translation_key="heading",
+        data_key="heading",
+        native_unit_of_measurement=DEGREE,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:compass",
+        entity_registry_enabled_default=False,
     ),
     # v4.7.8 (#1195/#1380) — the "SoC at the last charge report" snapshot the
     # portal ships beside the live SoC. Kept apart from battery_soc so the live

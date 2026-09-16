@@ -218,12 +218,13 @@ async def _host_discovery(
             session, f"garage {g_url.split('//')[1].split('/')[0]}{g_url.split('vehicles')[0][-22:]}",
             g_url, mbb.access_token, cid, uid, full=True)
 
-    # ── 1. homeRegion — the per-VIN data base. Try the classic discovery host
-    #       AND the mal host from the token aud. ──
+    # ── 1. homeRegion — the per-VIN data base on the classic discovery host.
+    #       (#306: the token's aud ``mal.prd.ece.vwg-connect.com`` is an audience
+    #       identifier, not a host — NXDOMAIN at VW's own nameservers, so it is
+    #       no longer probed; it only ever produced a false "unreachable".) ──
     print("\n[1] homeRegion discovery:")
     for hr_host in (
         "https://mal-1a.prd.ece.vwg-connect.com",
-        "https://mal.prd.ece.vwg-connect.com",
     ):
         await _probe_get(
             session, f"homeRegion @ {hr_host.split('//')[1]}",

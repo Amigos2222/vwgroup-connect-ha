@@ -281,7 +281,7 @@
           "enable_push_fcm": "EKSPERIMENTELL: Kun for CUPRA/SEAT. Aktiverer sanntids Firebase Cloud Messaging-push fra OLA-baksystemet (krever Python-pakken firebase-messaging — samme lazy-import som Skoda MQTT-bryteren i v1.18.0). Grunnlagsfase i v1.19.0; live-aktivering avventer validering fra fellesskapstestere. Hvis push er utilgjengelig, faller integrasjonen stille tilbake til polling. Last inn integrasjonen på nytt etter endring.",
           "enable_push_audi_vw": "Live (beta): Kun for Audi/VW. Aktiverer sanntids push-varsler fra Cariad FCM-kanalen (den samme myAudi/WeConnect-mobilappene bruker, dekker resultater av låsing/opplåsing, ladetilstand, klima, alarm). Dekodede hendelser sendes på Home Assistants hendelsesbuss som ``vag_connect_push_event`` og utløser en oppdatering fra koordinatoren. Krever Python-pakken firebase-messaging (samme lazy-import som Skoda MQTT + CUPRA/SEAT FCM). Live-aktivering siden v2.8.0 (Action #4); credential-resolveren er fortsatt testerbegrenset frem til oppfølgingen i oppgave #40 leverer Cariad Firebase sender_id. Hvis push er utilgjengelig, faller integrasjonen stille tilbake til polling. Last inn integrasjonen på nytt etter endring.",
           "client_id_override": "Nødløsning for avanserte brukere for når fellesskapet oppdager en fersk OAuth client_id i en ny VW Group-APK før vår daglige atlas-bygger fanger den opp. Lim inn hele UUID@apps_vw-dilab_com-strengen her, så prøver resolveren den FØRST ved hver autentisering, med alle eksisterende client_ids fortsatt i kjeden som reserve. La stå tom for standardoppførsel. Format: 8-4-4-4-12 heksadesimale sifre etterfulgt av @apps_vw-dilab_com. Feilformaterte verdier ignoreres stille.",
-          "eu_data_act_auto_kickoff": "Bare relevant når integrasjonen kjører i skrivebeskyttet EU Data Act-portalmodus (live BFF-strategier har feilet). Når PÅ sjekker koordinatoren etter en aktiv 15-minutters Custom Data Request per VIN ved oppstart og oppretter en hvis ingen finnes. Oppstarten innebærer et 1-måneds dataabonnement på kontoen din i portalen, så dette er valgfritt. Portalen godtar HØYST ÉN aktiv custom request per VIN om gangen. Av som standard.",
+          "eu_data_act_auto_kickoff": "Bare relevant når integrasjonen kjører i skrivebeskyttet EU Data Act-portalmodus (live BFF-strategier har feilet). Når PÅ sjekker koordinatoren etter en aktiv 15-minutters Custom Data Request per VIN ved oppstart og oppretter en hvis ingen finnes. Oppstarten innebærer et 1-måneds dataabonnement på kontoen din i portalen, så det kan slås av her. Portalen godtar HØYST ÉN aktiv custom request per VIN om gangen. På som standard — slå det bare av hvis du heller vil håndtere forespørselen selv i portalen.",
           "abrp_enable": "Send sanntidstelemetri til A Better Routeplanner. Trenger både en api_key og et token per kjøretøy nedenfor. Av = ingen utgående kall.",
           "abrp_api_key": "En utvikler-/partnernøkkel du registrerer hos iternio (vi leverer ingen). Identifiserer integrasjonen. Logges aldri.",
           "abrp_user_token": "«Generic»-tokenet fra ABRP-appen: Innstillinger -> bilen din -> Live Data. Logges aldri.",
@@ -1479,6 +1479,9 @@
       },
       "short_term_avg_fuel_consumption_l_100km": {
         "name": "Gjennomsnittlig drivstofforbruk (kort sikt)"
+      },
+      "heading": {
+        "name": "Kjøreretning"
       },
       "battery_soc_charge_report": {
         "name": "Batterinivå (siste laderapport)"

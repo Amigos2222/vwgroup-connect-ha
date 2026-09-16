@@ -240,3 +240,75 @@ class TestManualRefreshRevivesLikePollLoop:
         coord._revive_from_supplementary.assert_awaited_once()
         coord._merge_supplementary.assert_not_awaited()
         assert result["VIN1"]["battery_soc"] == 61
+
+
+class TestBrowserLoginEntryHasNoPortalPassword:
+    """v4.7.11 (#306, D#1415) — a browser-login (device-grant) entry stores a
+    synthetic username and NO password, so the runtime portal arm cannot sign
+    in. It used to try anyway, fail silently into ``no_data`` behind the
+    one-shot latch and leave the owner with only the "arming" WARNING. Now the
+    doomed attempt is skipped and the log names the options step to use.
+    """
+
+    def test_wall_without_password_skips_arm_and_says_what_to_do(self, caplog):
+        import logging
+
+        client = _seatcupra("cupra")
+        client._password = ""  # browser-login entry
+        client._get = AsyncMock(side_effect=_wall_403)
+        client._ola_consecutive_403 = 7
+        client._arm_eu_portal = AsyncMock()
+
+        with caplog.at_level(logging.WARNING):
+            data = asyncio.run(client.get_status(_VIN))
+
+        client._arm_eu_portal.assert_not_awaited()
+        assert data.no_data is True
+        assert client._ola_portal_fallback_tried is True
+        assert "Add or refresh the EU Data Act portal read channel" in caplog.text
+
+    def test_wall_with_password_still_arms(self):
+        client = _seatcupra("cupra")  # fixture stores "pw"
+        client._get = AsyncMock(side_effect=_wall_403)
+        client._ola_consecutive_403 = 7
+        portal = _portal()
+
+        async def _arm():
+            client._eu_portal = portal
+
+        client._arm_eu_portal = AsyncMock(side_effect=_arm)
+        data = asyncio.run(client.get_status(_VIN))
+        client._arm_eu_portal.assert_awaited_once()
+        assert data.battery_soc == 57
+
+    def test_arm_failure_is_logged_not_silent(self, caplog):
+        import logging
+
+        client = _seatcupra("cupra")
+        client._get = AsyncMock(side_effect=_wall_403)
+        client._ola_consecutive_403 = 7
+        client._arm_eu_portal = AsyncMock(side_effect=RuntimeError("portal login failed"))
+        with caplog.at_level(logging.WARNING):
+            data = asyncio.run(client.get_status(_VIN))
+        assert data.no_data is True
+        assert "portal fallback sign-in failed (RuntimeError)" in caplog.text
+
+    def test_garage_wall_without_password_names_the_fix_before_arming(self, caplog):
+        import logging
+
+        client = _seatcupra("seat")
+        client._password = ""
+        client._get = AsyncMock(side_effect=_wall_403)
+        portal = _portal()
+
+        async def _arm():
+            client._eu_portal = portal
+
+        client._arm_eu_portal = AsyncMock(side_effect=_arm)
+        with caplog.at_level(logging.WARNING):
+            vins = asyncio.run(client.get_vehicles())
+        # behaviour unchanged (the arm is still attempted — a portal-mode entry
+        # may legitimately carry no OLA password); the guidance is what's new.
+        client._arm_eu_portal.assert_awaited_once()
+        assert vins == [_VIN]
+        assert "Add or refresh the EU Data Act portal read channel" in caplog.text

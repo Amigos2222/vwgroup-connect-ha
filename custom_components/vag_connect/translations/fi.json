@@ -281,7 +281,7 @@
           "enable_push_fcm": "KOKEELLINEN: vain CUPRA/SEAT. Ottaa käyttöön reaaliaikaisen Firebase Cloud Messaging -pushin OLA-taustajärjestelmästä (vaatii firebase-messaging Python-paketin — sama lazy-import kuin v1.18.0 Skoda MQTT -kytkimessä). Perustusvaihe versiossa v1.19.0; live-aktivointi odottaa yhteisötestaajien validointia. Jos push ei ole saatavilla, integraatio palautuu hiljaisesti kyselyyn. Lataa integraatio uudelleen vaihdon jälkeen.",
           "enable_push_audi_vw": "Live (beta): vain Audi/VW. Ottaa käyttöön reaaliaikaiset push-ilmoitukset Cariad FCM -kanavasta (sama, jota myAudi/WeConnect-mobiilisovellukset käyttävät, kattaa lukituksen/avauksen tulokset, latauksen tilan, ilmastoinnin, hälytyksen). Puretut tapahtumat lähetetään Home Assistantin tapahtumaväylälle nimellä ``vag_connect_push_event`` ja ne käynnistävät koordinaattorin päivityksen. Vaatii firebase-messaging Python-paketin (sama lazy-import kuin Skoda MQTT + CUPRA/SEAT FCM). Live-aktivointi versiosta v2.8.0 alkaen (toimenpide #4); tunnisteiden selvitin on yhä testaajarajattu, kunnes tehtävän #40 jatkotoimi tuo Cariad Firebase sender_id:n. Jos push ei ole saatavilla, integraatio palautuu hiljaisesti kyselyyn. Lataa integraatio uudelleen vaihdon jälkeen.",
           "client_id_override": "Tehokäyttäjän varauloskäynti, kun yhteisö havaitsee tuoreen OAuth client_id:n uudessa VW Group -APK:ssa ennen kuin päivittäinen atlas-rakentajamme sen huomaa. Liitä tähän täysi UUID@apps_vw-dilab_com -merkkijono, niin selvitin kokeilee sitä ENSIN jokaisessa todennuksessa, kaikki olemassa olevat client_id:t yhä varajärjestelmänä ketjussa. Jätä tyhjäksi oletuskäytökselle. Muoto: 8-4-4-4-12 heksadesimaalimerkkiä, joita seuraa @apps_vw-dilab_com. Virheelliset arvot ohitetaan hiljaisesti.",
-          "eu_data_act_auto_kickoff": "Merkityksellinen vain, kun integraatio toimii vain lukemiseen tarkoitetussa EU Data Act -portaalitilassa (live-BFF-strategiat ovat epäonnistuneet). Käytössä ollessaan koordinaattori tarkistaa käynnistyksessä, onko VIN-kohtaisesti aktiivinen 15 minuutin mukautettu datapyyntö, ja luo sellaisen jos yhtään ei ole. Aloitus tarkoittaa 1 kuukauden datatilausta tilillesi portaalissa, joten tämä on valinnainen. Portaali hyväksyy KORKEINTAAN YHDEN aktiivisen mukautetun pyynnön VIN-numeroa kohti kerrallaan. Oletuksena pois päältä.",
+          "eu_data_act_auto_kickoff": "Merkityksellinen vain, kun integraatio toimii vain lukemiseen tarkoitetussa EU Data Act -portaalitilassa (live-BFF-strategiat ovat epäonnistuneet). Käytössä ollessaan koordinaattori tarkistaa käynnistyksessä, onko VIN-kohtaisesti aktiivinen 15 minuutin mukautettu datapyyntö, ja luo sellaisen jos yhtään ei ole. Aloitus tarkoittaa 1 kuukauden datatilausta tilillesi portaalissa, joten sen voi kytkeä pois tästä. Portaali hyväksyy KORKEINTAAN YHDEN aktiivisen mukautetun pyynnön VIN-numeroa kohti kerrallaan. Oletuksena päällä — kytke pois vain, jos haluat hallita pyyntöä itse portaalissa.",
           "abrp_enable": "Lähetä live-telemetriaa A Better Routeplannerille. Tarvitsee sekä api_keyn että ajoneuvokohtaisen tunnisteen alla. Pois = ei lähteviä kutsuja.",
           "abrp_api_key": "Kehittäjä-/kumppaniavain, jonka rekisteröit iterniolla (emme toimita sellaista). Tunnistaa integraation. Ei koskaan lokiin.",
           "abrp_user_token": "'Generic'-tunniste ABRP-sovelluksesta: Asetukset -> autosi -> Live Data. Ei koskaan lokiin.",
@@ -1479,6 +1479,9 @@
       },
       "short_term_avg_fuel_consumption_l_100km": {
         "name": "Lyhyen aikavälin keskimääräinen polttoaineenkulutus"
+      },
+      "heading": {
+        "name": "Ajosuunta"
       },
       "battery_soc_charge_report": {
         "name": "Akun varaustaso (viimeisin latausraportti)"

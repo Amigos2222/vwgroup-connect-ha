@@ -281,7 +281,7 @@
           "enable_push_fcm": "EKSPERYMENTALNE: tylko CUPRA/SEAT. Włącza push Firebase Cloud Messaging w czasie rzeczywistym z backendu OLA (wymaga pakietu Python firebase-messaging — ten sam leniwy import co przełącznik MQTT Skoda w v1.18.0). Faza wstępna w v1.19.0; aktywacja na żywo oczekuje na walidację przez testerów społeczności. Jeśli push jest niedostępny, integracja po cichu wraca do odpytywania. Po przełączeniu przeładuj integrację.",
           "enable_push_audi_vw": "EXPERIMENTAL: Audi/VW only. Enables real-time push notifications from Cariad FCM channel (same one myAudi/WeConnect mobile apps use — covers lock/unlock results, charging-state, climate, alarm). Requires firebase-messaging Python package (same as Skoda MQTT + CUPRA/SEAT FCM). Foundation phase in v1.23.0; live activation pending community-tester validation. If push is unavailable, the integration silently falls back to polling. Reload the integration after toggling.",
           "client_id_override": "Furtka dla zaawansowanych użytkowników na wypadek, gdy społeczność wypatrzy nowy client_id OAuth w nowym APK VW Group, zanim wychwyci go nasz codzienny kreator atlasu. Wklej tutaj pełny ciąg UUID@apps_vw-dilab_com, a resolver spróbuje go NAJPIERW przy każdym uwierzytelnieniu, zachowując wszystkie istniejące client_id w łańcuchu jako rozwiązanie awaryjne. Pozostaw puste dla domyślnego zachowania. Format: cyfry szesnastkowe 8-4-4-4-12, po których następuje @apps_vw-dilab_com. Nieprawidłowe wartości są po cichu ignorowane.",
-          "eu_data_act_auto_kickoff": "Ma znaczenie tylko wtedy, gdy integracja działa w trybie portalu EU Data Act tylko do odczytu (strategie live BFF zawiodły). Gdy WŁĄCZONE, koordynator sprawdza przy uruchomieniu, czy dla danego VIN istnieje aktywny 15-minutowy Custom Data Request, i tworzy go, jeśli żaden nie istnieje. Uruchomienie wiąże się z miesięczną subskrypcją danych na Twoim koncie w portalu, więc jest to opcja włączana dobrowolnie. Portal akceptuje NAJWYŻEJ JEDNO aktywne żądanie niestandardowe na VIN jednocześnie. Domyślnie wyłączone.",
+          "eu_data_act_auto_kickoff": "Ma znaczenie tylko wtedy, gdy integracja działa w trybie portalu EU Data Act tylko do odczytu (strategie live BFF zawiodły). Gdy WŁĄCZONE, koordynator sprawdza przy uruchomieniu, czy dla danego VIN istnieje aktywny 15-minutowy Custom Data Request, i tworzy go, jeśli żaden nie istnieje. Uruchomienie wiąże się z miesięczną subskrypcją danych na Twoim koncie w portalu, więc można ją tutaj wyłączyć. Portal akceptuje NAJWYŻEJ JEDNO aktywne żądanie niestandardowe na VIN jednocześnie. Domyślnie włączone — wyłącz tylko wtedy, gdy wolisz samodzielnie zarządzać żądaniem w portalu.",
           "abrp_enable": "Wysyłaj telemetrię na żywo do A Better Routeplanner. Wymaga api_key oraz tokenu na pojazd. Wyłączone = brak połączeń wychodzących.",
           "abrp_api_key": "Klucz dewelopera/partnera rejestrowany w iternio (nie dostarczamy go). Identyfikuje integrację. Nigdy nie jest logowany.",
           "abrp_user_token": "Token 'Generic' z aplikacji ABRP: Ustawienia -> Twój samochód -> Live Data. Nigdy nie jest logowany.",
@@ -1479,6 +1479,9 @@
       },
       "short_term_avg_fuel_consumption_l_100km": {
         "name": "Krótkoterminowe średnie zużycie paliwa"
+      },
+      "heading": {
+        "name": "Kierunek jazdy"
       },
       "battery_soc_charge_report": {
         "name": "Poziom baterii (ostatni raport ładowania)"

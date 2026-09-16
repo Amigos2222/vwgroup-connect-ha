@@ -59,3 +59,26 @@ def test_absent_scout_fields_are_inert() -> None:
                "key": "k"}])
     assert d.short_term_avg_electric_consumption_kwh_100km is None
     assert d.engine_starts_count is None
+
+
+def test_heading_is_parsed_and_wrapped() -> None:
+    d = _map([{"dataFieldName": "heading", "value": "270", "key": "k"}])
+    assert d.heading == 270
+    assert _map([{"dataFieldName": "heading", "value": "360", "key": "k"}]).heading == 0
+    # out-of-range bearings are dropped, not clamped
+    assert _map([{"dataFieldName": "heading", "value": "400", "key": "k"}]).heading is None
+
+
+def test_heading_has_a_sensor_entity() -> None:
+    # v4.7.11 (#1378) — parsed since 4.7.6 but never surfaced; Scout policy says
+    # every mapped value gets an entity (disabled by default is fine).
+    from homeassistant.const import DEGREE
+
+    from custom_components.vag_connect.sensor import SENSOR_DESCRIPTIONS
+
+    descs = [d for d in SENSOR_DESCRIPTIONS if d.key == "heading"]
+    assert len(descs) == 1
+    desc = descs[0]
+    assert desc.data_key == "heading"
+    assert desc.native_unit_of_measurement == DEGREE
+    assert desc.entity_registry_enabled_default is False

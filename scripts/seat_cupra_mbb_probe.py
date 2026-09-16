@@ -52,6 +52,7 @@ import base64
 import json
 import os
 import re
+import socket
 import sys
 from pathlib import Path
 from typing import Any
@@ -122,11 +123,12 @@ IDP = "https://identity.vwgroup.io"
 
 # legacy MBB discovery/setter host (same EU plane VW uses)
 DISCOVERY_BASE = "https://mal-1a.prd.ece.vwg-connect.com"
-# #464 — the MBB exchange bearer's aud is actually ``mal.prd.ece`` (NOT ``-1a``,
-# which is only the VW setter) + ``ha-5a…vwautocloud.net``. bbr111's mal-1a reads
-# came back 403/404; those may be a wrong-host artifact, so we also hit the host
-# the bearer is genuinely audienced for.
-DISCOVERY_BASE_ALT = "https://mal.prd.ece.vwg-connect.com"
+# #464/#306 — the MBB exchange bearer's aud lists ``mal.prd.ece.vwg-connect.com``,
+# but that name is an OAuth AUDIENCE identifier, not a host: it is NXDOMAIN at
+# VW's own authoritative nameserver (verified 2026-09-16 from two networks after
+# @goncal showed it from three resolvers). An earlier revision probed it anyway
+# and printed "host unreachable from you" — wrongly blaming the reporter's
+# network. ``mal-1a`` is the only legacy MBB host; nothing else to try there.
 # modern CARIAD BFF — the attestation-walled plane; we probe it only to record
 # whether the device-grant bearer is accepted (200) or walled (401/403).
 BFF_BASE = "https://emea.bff.cariad.digital"
@@ -183,7 +185,11 @@ async def _hit(session: Any, bearer: str, cid: str, uid: str, url: str,
     try:
         async with session.get(url, headers=headers) as r:
             return r.status
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        # #306 — tell "the name does not exist" apart from "could not connect":
+        # the former is never the reporter's network.
+        if isinstance(getattr(exc, "os_error", None), socket.gaierror) or isinstance(exc, socket.gaierror):
+            return -1
         return 0
 
 
@@ -248,7 +254,8 @@ async def main(vin: str) -> int:
 
     def rec(host_label: str, status: int, note: str = "", body: str = "") -> None:
         verdict = {
-            0: "conn-error (host unreachable from you)",
+            -1: "DNS: name does not exist (NXDOMAIN) — not your network",
+            0: "conn-error (timeout / refused / TLS — could not connect)",
             200: "ACCEPTED + data",
             401: "token REJECTED (invalid_token)",
             403: "token accepted, no permission / not enrolled (403)",
@@ -356,20 +363,10 @@ async def main(vin: str) -> int:
                                 f"{DISCOVERY_BASE}/fs-car/usermanagement/users/v1/{brand}/DE/vehicles",
                                 app_names[0])
                 rec(f"mal-1a /usermanagement/{brand}/DE/vehicles", st)
-            # #464 — same reads against mal.prd.ece (the bearer's ACTUAL aud host,
-            # not the -1a setter). A 200/404 here where mal-1a gave 403 would mean
-            # we were just hitting the wrong host all along.
-            for brand in ("Seat", "Cupra"):
-                st = await _hit(session, mbb.access_token, cid, uid,
-                                f"{DISCOVERY_BASE_ALT}/fs-car/usermanagement/users/v1/{brand}/DE/vehicles",
-                                app_names[0])
-                rec(f"mal.prd.ece /usermanagement/{brand}/DE/vehicles", st)
 
             if has_vin:
                 # homeRegion — does the MBB plane KNOW this SEAT/CUPRA VIN?
-                # Try BOTH the setter host and the bearer's aud host.
-                for base_label, base in (("mal-1a", DISCOVERY_BASE),
-                                         ("mal.prd.ece", DISCOVERY_BASE_ALT)):
+                for base_label, base in (("mal-1a", DISCOVERY_BASE),):
                     for app in app_names:
                         st = await _hit(session, mbb.access_token, cid, uid,
                                         f"{base}/api/cs/vds/v1/vehicles/{V}/homeRegion",

@@ -61,6 +61,23 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 - **Diagnostics show the vw.de channel's read outcomes.** The vw.de charging/maintenance reads record
   their status, and the connector's outcomes are exported even before the first read — the table a
   reporter asked for was never wired (#1313, thanks @realynot).
+- **The portal's `heading` value finally has a sensor.** 4.7.6 parsed the heading that arrives next to
+  `persLocation` on MEB portal cars, and its release note said it came through as a sensor — it didn't;
+  there was no entity. *Heading* (degrees, disabled by default) now exists (#1378, thanks @Laurentwb).
+- **Options help text for the EU Data Act auto-kickoff said "opt-in, off by default" — it has been on by
+  default since v2.17.1.** Corrected in all 13 languages; taken literally, the old text could talk you into
+  switching off the very thing that creates your data request.
+- **SEAT/CUPRA probe script: a host name that doesn't exist no longer reads as "unreachable from you".**
+  `mal.prd.ece.vwg-connect.com` was only ever a token audience, not a host (NXDOMAIN at VW's own
+  nameserver); the probe dropped it and now tells a DNS miss apart from a connection failure instead of
+  blaming the reporter's network (#306, thanks @goncal for the three-resolver check).
+- **CONTRIBUTORS.md caught up:** 18 reporters credited in the 4.7.x notes were missing from the list.
+- **CUPRA/SEAT browser-login entries: the portal fallback now says why it can't sign in.** The 4.7.10
+  automatic EU Data Act portal fallback signs in with the stored e-mail + password — an entry set up
+  with the browser login stores none, so the sign-in failed silently and readings stayed empty with only
+  the "arming" line in the log. The doomed attempt is skipped and the log now names the fix (Configure →
+  "Add or refresh the EU Data Act portal read channel"); a failed portal sign-in is logged too (#306,
+  D#1415).
 
 ### Added
 - **Portal feed health shows how much of VW's export actually carries values.** VW's EU Data Act
@@ -215,7 +232,8 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   through as sensors. The per-trip id is recognised as metadata so it stops being reported as an
   undiscovered field. Grounded on real Škoda Elroq and Audi captures (#1378, #1375).
   *(Corrected in 4.7.8: the original note implied every car sends `persLocation` and that the trip
-  id is used for correlation — neither is the case.)*
+  id is used for correlation — neither is the case. Corrected in 4.7.11: heading was parsed but had
+  no sensor until 4.7.11.)*
 - **Porsche's captcha can now be solved right in the setup dialog.** Porsche's login can put up an
   Auth0 captcha; the integration now shows it inline during setup, re-authentication and reconfigure
   so you can type it and continue. The login also stops declaring passkey support (matching a proven

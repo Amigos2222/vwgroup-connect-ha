@@ -281,7 +281,7 @@
           "enable_push_fcm": "EXPERIMENTÁLNÍ: pouze CUPRA/SEAT. Umožňuje push v reálném čase přes Firebase Cloud Messaging z backendu OLA (vyžaduje Python balíček firebase-messaging — stejné líné načítání jako u přepínače Skoda MQTT ve verzi v1.18.0). Základní fáze ve verzi v1.19.0; ostré nasazení čeká na ověření komunitními testery. Pokud push není dostupný, integrace se tiše vrátí k dotazování (polling). Po přepnutí integraci znovu načtěte.",
           "enable_push_audi_vw": "EXPERIMENTAL: Audi/VW only. Enables real-time push notifications from Cariad FCM channel (same one myAudi/WeConnect mobile apps use — covers lock/unlock results, charging-state, climate, alarm). Requires firebase-messaging Python package (same as Skoda MQTT + CUPRA/SEAT FCM). Foundation phase in v1.23.0; live activation pending community-tester validation. If push is unavailable, the integration silently falls back to polling. Reload the integration after toggling.",
           "client_id_override": "Únikový poklop pro pokročilé uživatele pro případ, kdy komunita objeví nový OAuth client_id v nové APK skupiny VW dřív, než jej zachytí náš denní atlas builder. Vložte sem celý řetězec UUID@apps_vw-dilab_com a resolver jej při každém ověření vyzkouší JAKO PRVNÍ, přičemž všechny stávající client_id zůstanou v řetězci jako záloha. Ponechte prázdné pro výchozí chování. Formát: 8-4-4-4-12 hexadecimálních číslic následovaných @apps_vw-dilab_com. Chybně zadané hodnoty jsou tiše ignorovány.",
-          "eu_data_act_auto_kickoff": "Má smysl pouze tehdy, když integrace běží v režimu portálu EU Data Act jen pro čtení (živé strategie BFF selhaly). Pokud je zapnuto, koordinátor při spuštění kontroluje aktivní 15minutový Custom Data Request pro každé VIN a vytvoří jej, pokud žádný neexistuje. Toto spuštění znamená měsíční předplatné dat na vašem účtu na portálu, proto je volitelné (opt-in). Portál přijímá NEJVÝŠE JEDEN aktivní vlastní požadavek na VIN v daný okamžik. Ve výchozím stavu vypnuto.",
+          "eu_data_act_auto_kickoff": "Má smysl pouze tehdy, když integrace běží v režimu portálu EU Data Act jen pro čtení (živé strategie BFF selhaly). Pokud je zapnuto, koordinátor při spuštění kontroluje aktivní 15minutový Custom Data Request pro každé VIN a vytvoří jej, pokud žádný neexistuje. Toto spuštění znamená měsíční předplatné dat na vašem účtu na portálu, proto jej zde lze vypnout. Portál přijímá NEJVÝŠE JEDEN aktivní vlastní požadavek na VIN v daný okamžik. Ve výchozím stavu zapnuto — vypněte jej jen tehdy, pokud chcete požadavek spravovat na portálu sami.",
           "abrp_enable": "Odesílat živou telemetrii do A Better Routeplanner. Vyžaduje api_key a token pro každé vozidlo. Vypnuto = žádná odchozí volání.",
           "abrp_api_key": "Vývojářský/partnerský klíč, který si zaregistrujete u iternio (žádný nedodáváme). Identifikuje integraci. Nikdy se neloguje.",
           "abrp_user_token": "Token 'Generic' z aplikace ABRP: Nastavení -> vaše auto -> Live Data. Nikdy se neloguje.",
@@ -1479,6 +1479,9 @@
       },
       "short_term_avg_fuel_consumption_l_100km": {
         "name": "Krátkodobá průměrná spotřeba paliva"
+      },
+      "heading": {
+        "name": "Směr jízdy"
       },
       "battery_soc_charge_report": {
         "name": "Stav baterie (poslední zpráva o nabíjení)"
