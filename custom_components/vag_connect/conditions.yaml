@@ -1,7 +1,9 @@
 # Named conditions exposed by VW Group Connect (experimental, HA 2026.7+).
-# Human-readable names + descriptions live in strings.json / translations; these
-# conditions take no fields in v1 (each tests whether any of the account's
-# vehicles is currently in the given state).
+# Human-readable names + descriptions live in strings.json / translations.
+# v4.7.11 (trigger-vin-targeting): each condition accepts an OPTIONAL `vin` option
+# (17 uppercase chars) and/or a `target:` device — set either to test only that
+# vehicle. Unset, the condition tests whether ANY of the account's vehicles is
+# currently in the given state (v1 behaviour).
 is_charging:
 is_plugged_in:
 is_locked:

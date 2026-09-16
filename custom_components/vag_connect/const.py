@@ -283,6 +283,13 @@ CONF_SUPPLEMENTARY_AUTHPROXY         = "supplementary_authproxy"
 # read ONLY via entry.data (the options listener folds options → data, and
 # entry.options is always {} at read time — see [[vag-connect-entry-options-trap]]).
 CONF_TEST_COHORT                     = "test_cohort"
+# v4.7.11 (#465/#632/#966) — OPT-IN (default OFF): when the Volkswagen.de read
+# channel's silent SSO resume dies, re-login once with the stored password instead
+# of surfacing a "re-add the channel" Repair. Bounded so it may trigger at most one
+# VW email code every ~15 min; an actual code still needs the interactive re-add
+# (we never auto-answer OTP). Read via entry.data (options folded into data by the
+# listener — see [[vag-connect-entry-options-trap]]).
+CONF_VWDE_CRED_RELOGIN               = "vwde_cred_relogin"
 # Opt-in (default OFF): auto-provision monthly utility_meter helpers (charged
 # energy kWh + odometer km) per vehicle. Persistent config-entry helpers the user
 # must remove themselves, so never created silently — see utility_meter.py.

@@ -259,6 +259,7 @@
           "keep_raw_datasets": "Conserva i set di dati grezzi EU Data Act (diagnostica)",
           "auto_utility_meters": "Crea automaticamente contatori mensili (energia caricata, chilometraggio)",
           "test_cohort": "Aiutaci a migliorare VW Group Connect (gruppo di test ad adesione volontaria)",
+          "vwde_cred_relogin": "Volkswagen.de: accedi di nuovo con la password salvata quando la sessione web scade",
           "vweu_device_grant": "Aggiungi VW EU Two-Way — comandi + letture in tempo reale (BETA)",
           "remove_vweu_twoway": "Rimuovi VW EU Two-Way (torna al canale precedente)",
           "companion_read_vehicle_health": "Companion: leggi contachilometri e tagliando da Vehicle Health (naviga nell'app)",
@@ -280,13 +281,14 @@
           "enable_push_fcm": "SPERIMENTALE: solo CUPRA/SEAT. Abilita il push in tempo reale via Firebase Cloud Messaging dal backend OLA (richiede il pacchetto Python firebase-messaging — stesso lazy-import del toggle MQTT Skoda della v1.18.0). Fase di fondamenta in v1.19.0; l'attivazione live è in attesa della validazione dei tester della community. Se il push non è disponibile, l'integrazione ripiega silenziosamente sul polling. Ricarica l'integrazione dopo aver modificato l'impostazione.",
           "enable_push_audi_vw": "Live (beta): solo Audi/VW. Abilita le notifiche push in tempo reale dal canale Cariad FCM (lo stesso usato dalle app mobili myAudi/WeConnect, copre gli esiti di chiusura/apertura, lo stato di ricarica, il clima, l'allarme). Gli eventi decodificati vengono emessi sul bus eventi di Home Assistant come ``vag_connect_push_event`` e attivano un aggiornamento del coordinatore. Richiede il pacchetto Python firebase-messaging (stesso lazy-import di Skoda MQTT + CUPRA/SEAT FCM). Attivazione live dalla v2.8.0 (Action #4); il resolver delle credenziali è ancora limitato ai tester finché il follow-up del task #40 non aggiungerà il sender_id Firebase di Cariad. Se il push non è disponibile, l'integrazione ripiega silenziosamente sul polling. Ricarica l'integrazione dopo aver modificato l'impostazione.",
           "client_id_override": "Via di fuga per utenti esperti quando la community individua un OAuth client_id nuovo in un nuovo APK del gruppo VW prima che il nostro atlas builder giornaliero lo intercetti. Incolla qui la stringa UUID@apps_vw-dilab_com completa e il resolver la proverà PER PRIMA a ogni autenticazione, con tutti i client_id esistenti ancora nella catena come fallback. Lascia vuoto per il comportamento predefinito. Formato: 8-4-4-4-12 cifre esadecimali seguite da @apps_vw-dilab_com. I valori malformati vengono ignorati silenziosamente.",
-          "eu_data_act_auto_kickoff": "Ha senso solo quando l'integrazione opera in modalità portale EU Data Act in sola lettura (le strategie BFF live hanno fallito). Quando è ATTIVO, il coordinatore verifica all'avvio la presenza di una Custom Data Request attiva a 15 minuti per ogni VIN e ne crea una quando non ne esiste alcuna. L'avvio implica un abbonamento ai dati di 1 mese sul tuo account nel portale, quindi è opt-in. Il portale accetta AL MASSIMO UNA custom request attiva per VIN alla volta. Disattivato per impostazione predefinita.",
+          "eu_data_act_auto_kickoff": "Ha senso solo quando l'integrazione opera in modalità portale EU Data Act in sola lettura (le strategie BFF live hanno fallito). Quando è ATTIVO, il coordinatore verifica all'avvio la presenza di una Custom Data Request attiva a 15 minuti per ogni VIN e ne crea una quando non ne esiste alcuna. L'avvio implica un abbonamento ai dati di 1 mese sul tuo account nel portale, quindi qui puoi disattivarlo. Il portale accetta AL MASSIMO UNA custom request attiva per VIN alla volta. Attivo per impostazione predefinita: disattivalo solo se preferisci gestire la richiesta tu stesso sul portale.",
           "abrp_enable": "Invia telemetria in tempo reale ad A Better Routeplanner. Richiede sia una api_key sia un token per veicolo qui sotto. Disattivato = nessuna chiamata in uscita.",
           "abrp_api_key": "Una chiave sviluppatore/partner che registri presso iternio (non ne forniamo una). Identifica l'integrazione. Mai registrata nei log.",
           "abrp_user_token": "Il token 'Generic' dell'app ABRP: Impostazioni -> la tua auto -> Live Data. Mai registrato nei log.",
           "keep_raw_datasets": "Utile solo sul canale del portale EU Data Act. Se attivo, gli ultimi file ZIP di dati grezzi forniti dal portale vengono conservati su disco (in .storage, per veicolo e con un limite di dimensione) così un valore errato o mancante può essere riprodotto dai byte esatti inviati dalla tua auto. Questi file contengono la posizione GPS, il VIN e la telemetria, quindi è disattivato per impostazione predefinita: attivalo solo durante la risoluzione dei problemi.",
           "auto_utility_meters": "Disattivato per impostazione predefinita. Quando è attivo, l'integrazione crea gli helper utility_meter di Home Assistant che sommano l'energia caricata e il chilometraggio per mese solare, uno per veicolo. L'interruttore compare solo quando esiste già un sensore di origine compatibile. Sono helper permanenti: disattivandolo di nuovo si smette di crearne di nuovi ma non si eliminano quelli già creati — rimuovili in Impostazioni → Dispositivi e servizi → Helper.",
           "test_cohort": "Disattivato per impostazione predefinita. Attivalo per permettere all'integrazione di provare letture sperimentali sulla tua auto — come il tentativo, tuttora in corso, di recuperare la posizione GPS per le auto Volkswagen europee — e di mostrarti ogni tanto una notifica (che puoi chiudere) in cui ti chiede di condividere un file di diagnostica, così da confermare una nuova funzionalità per il tuo modello. Tutto ciò che condividi viene oscurato automaticamente prima di lasciare il tuo sistema: non vengono mai inclusi VIN, GPS, token o indirizzo email. È così che si sbloccano nuove funzioni per la tua auto e per tutti quelli che guidano lo stesso modello, e puoi disattivarlo di nuovo in qualsiasi momento.",
+          "vwde_cred_relogin": "Disattivato per impostazione predefinita. Riguarda solo il canale di lettura Volkswagen.de. Quando il ripristino silenzioso della sessione fallisce, l'integrazione accede di nuovo con la password che hai già salvato invece di chiederti di aggiungere di nuovo il canale. Questo può far sì che Volkswagen invii al massimo un codice via e-mail ogni 15 minuti; se è richiesto un codice, non può essere inserito automaticamente e ti verrà chiesto di aggiungere di nuovo il canale.",
           "vweu_device_grant": "Solo Volkswagen, BETA. Aggiunge il controllo bidirezionale (blocca/sblocca, clima, ricarica) e le letture CARIAD in tempo reale accedendo con il tuo Volkswagen ID. Qui Volkswagen rilascia solo un token di 1 ora, quindi la tua password viene memorizzata per rinnovarlo automaticamente — è inviata solo al server di login di Volkswagen e non viene mai scritta nei log o nella diagnostica. Se preferisci non memorizzare una password, usa invece i canali in sola lettura. Selezionando questa opzione si apre il passaggio di accesso."
         }
       },
@@ -928,6 +930,9 @@
       "data_error_detail": {
         "name": "Errore dati"
       },
+      "error_reason": {
+        "name": "Codice motivo errore"
+      },
       "external_power_supply_state": {
         "name": "Alimentazione esterna"
       },
@@ -1474,6 +1479,9 @@
       },
       "short_term_avg_fuel_consumption_l_100km": {
         "name": "Consumo medio carburante (breve termine)"
+      },
+      "heading": {
+        "name": "Direzione di marcia"
       },
       "battery_soc_charge_report": {
         "name": "Livello batteria (ultimo rapporto di ricarica)"
@@ -2394,61 +2402,61 @@
   "triggers": {
     "started_charging": {
       "name": "Il veicolo ha iniziato a caricare",
-      "description": "Si attiva quando un veicolo inizia a caricare."
+      "description": "Si attiva quando un veicolo inizia a caricare. Facoltativamente limita a un veicolo con l'opzione vin o un dispositivo di destinazione."
     },
     "stopped_charging": {
       "name": "Il veicolo ha smesso di caricare",
-      "description": "Si attiva quando un veicolo smette di caricare."
+      "description": "Si attiva quando un veicolo smette di caricare. Facoltativamente limita a un veicolo con l'opzione vin o un dispositivo di destinazione."
     },
     "plugged_in": {
       "name": "Veicolo collegato",
-      "description": "Si attiva quando il cavo di ricarica di un veicolo viene collegato."
+      "description": "Si attiva quando il cavo di ricarica di un veicolo viene collegato. Facoltativamente limita a un veicolo con l'opzione vin o un dispositivo di destinazione."
     },
     "unplugged": {
       "name": "Veicolo scollegato",
-      "description": "Si attiva quando il cavo di ricarica di un veicolo viene scollegato."
+      "description": "Si attiva quando il cavo di ricarica di un veicolo viene scollegato. Facoltativamente limita a un veicolo con l'opzione vin o un dispositivo di destinazione."
     },
     "locked": {
       "name": "Veicolo bloccato",
-      "description": "Si attiva quando un veicolo viene bloccato."
+      "description": "Si attiva quando un veicolo viene bloccato. Facoltativamente limita a un veicolo con l'opzione vin o un dispositivo di destinazione."
     },
     "unlocked": {
       "name": "Veicolo sbloccato",
-      "description": "Si attiva quando un veicolo viene sbloccato."
+      "description": "Si attiva quando un veicolo viene sbloccato. Facoltativamente limita a un veicolo con l'opzione vin o un dispositivo di destinazione."
     },
     "started_preconditioning": {
       "name": "Il veicolo ha avviato la preclimatizzazione",
-      "description": "Si attiva quando un veicolo avvia la preclimatizzazione."
+      "description": "Si attiva quando un veicolo avvia la preclimatizzazione. Facoltativamente limita a un veicolo con l'opzione vin o un dispositivo di destinazione."
     },
     "stopped_preconditioning": {
       "name": "Il veicolo ha interrotto la preclimatizzazione",
-      "description": "Si attiva quando un veicolo interrompe la preclimatizzazione."
+      "description": "Si attiva quando un veicolo interrompe la preclimatizzazione. Facoltativamente limita a un veicolo con l'opzione vin o un dispositivo di destinazione."
     },
     "charge_target_reached": {
       "name": "Il veicolo ha raggiunto l'obiettivo di carica",
-      "description": "Si attiva quando il livello di carica di un veicolo raggiunge il suo obiettivo."
+      "description": "Si attiva quando il livello di carica di un veicolo raggiunge il suo obiettivo. Facoltativamente limita a un veicolo con l'opzione vin o un dispositivo di destinazione."
     }
   },
   "conditions": {
     "is_charging": {
       "name": "Un veicolo è in carica",
-      "description": "Verifica se un veicolo è in carica in questo momento."
+      "description": "Verifica se un veicolo è in carica in questo momento. Facoltativamente limita a un veicolo con l'opzione vin o un dispositivo di destinazione."
     },
     "is_plugged_in": {
       "name": "Un veicolo è collegato",
-      "description": "Verifica se il cavo di ricarica di un veicolo è collegato."
+      "description": "Verifica se il cavo di ricarica di un veicolo è collegato. Facoltativamente limita a un veicolo con l'opzione vin o un dispositivo di destinazione."
     },
     "is_locked": {
       "name": "Un veicolo è bloccato",
-      "description": "Verifica se un veicolo è bloccato."
+      "description": "Verifica se un veicolo è bloccato. Facoltativamente limita a un veicolo con l'opzione vin o un dispositivo di destinazione."
     },
     "is_preconditioning": {
       "name": "Un veicolo è in preclimatizzazione",
-      "description": "Verifica se un veicolo sta eseguendo la preclimatizzazione."
+      "description": "Verifica se un veicolo sta eseguendo la preclimatizzazione. Facoltativamente limita a un veicolo con l'opzione vin o un dispositivo di destinazione."
     },
     "is_charge_target_reached": {
       "name": "Un veicolo ha raggiunto l'obiettivo di carica",
-      "description": "Verifica se il livello di carica di un veicolo è pari o superiore al suo obiettivo."
+      "description": "Verifica se il livello di carica di un veicolo è pari o superiore al suo obiettivo. Facoltativamente limita a un veicolo con l'opzione vin o un dispositivo di destinazione."
     }
   }
 }

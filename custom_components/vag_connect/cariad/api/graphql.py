@@ -426,12 +426,42 @@ class VehicleImageFetcher:
         return result
 
     @staticmethod
-    def best_url(image_urls: dict[str, str] | None) -> str | None:
-        """Return the best available image URL (MYAPN8NB preferred)."""
+    def primary_url(image_urls: dict[str, str] | None) -> str | None:
+        """Best single render for entity_picture, across BOTH render backends.
+
+        v4.7.11 (parity ADOPT, #1229 hero selection) — image_urls arrives keyed
+        two different ways: the vgql (Audi/VW connected) backend keys it by
+        media-type id (``MYAPN8NB`` …), while the vw.de exterior-render backend
+        keys it by ``view_direction_angle`` strings (``side_left`` …). A hero
+        shot reads best as a side/profile ¾ view, so prefer those with a tolerant
+        case-insensitive substring chain over the KEYS: tier 1 side/profile,
+        tier 2 ¾-angle/front, tier 3 the curated vgql media-id order (so a
+        connected Audi still gets its best media id — its codes contain none of
+        the tier 1/2 needles and fall straight through), tier 4 any first value.
+        Mirrors the hero-render selection approach of the Škoda and Audi
+        community integrations' image handling; reimplemented here, no code copied.
+        """
         if not image_urls:
             return None
+        # tier 1 (side/profile) then tier 2 (¾-angle/front) — substring over the
+        # vw.de view-direction keys; first key matching the tier wins.
+        for needles in (("side", "profile", "seiten"), ("3_4", "angle", "front")):
+            for key, val in image_urls.items():
+                if val and any(n in key.lower() for n in needles):
+                    return val
+        # tier 3 — curated vgql media-id order (Audi/VW connected backend).
         for mt in _PREFERRED_ORDER:
             url = image_urls.get(mt)
             if url:
                 return url
+        # tier 4 — anything present.
         return next(iter(image_urls.values()), None)
+
+    @staticmethod
+    def best_url(image_urls: dict[str, str] | None) -> str | None:
+        """Return the best available image URL.
+
+        v4.7.11 — delegates to ``primary_url`` so every entity_picture consumer
+        (entity_base) inherits the hero side/¾ preference with zero new entities.
+        """
+        return VehicleImageFetcher.primary_url(image_urls)

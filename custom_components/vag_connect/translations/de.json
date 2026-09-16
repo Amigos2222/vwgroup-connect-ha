@@ -259,6 +259,7 @@
           "keep_raw_datasets": "Rohe EU-Data-Act-Datensätze behalten (Diagnose)",
           "auto_utility_meters": "Monatliche Zähler automatisch anlegen (geladene Energie, Kilometer)",
           "test_cohort": "Hilf mit, VW Group Connect zu verbessern (freiwillige Testgruppe)",
+          "vwde_cred_relogin": "Volkswagen.de: bei totgelaufener Web-Sitzung mit gespeichertem Passwort neu anmelden",
           "vweu_device_grant": "VW EU Two-Way hinzufügen — Befehle + Live-Daten (BETA)",
           "remove_vweu_twoway": "VW EU Two-Way entfernen (zurück zum vorherigen Kanal)",
           "companion_read_vehicle_health": "Companion: Kilometerstand und Service aus dem Fahrzeugcheck lesen (navigiert in der App)",
@@ -280,13 +281,14 @@
           "companion_read_charge_detail": "Nur Companion (ADB). Liest zusätzlich Ladeziel, Ladeleistung und Restzeit, die hinter dem Lade-Detailscreen liegen. Dafür TIPPT die App zur Navigation dorthin (etwa alle 15 Minuten) — nur aktivieren, wenn der Ablauf auf deinem Handy funktioniert. Standard aus. Nach Änderung neu laden.",
           "companion_wake_sleep": "Nur Companion (ADB). Weckt das Display vor jeder Abfrage und legt es danach wieder schlafen, damit ein gesperrtes/schlafendes Handy die App während des Lesens zeigt, ohne den Bildschirm dauerhaft an zu lassen. Standard aus. Nach Änderung neu laden.",
           "client_id_override": "Power-User Eskapeluke wenn die Community einen frischen OAuth client_id in einer neuen VW Group APK entdeckt bevor unser täglicher Atlas-Builder ihn findet. Paste den vollen UUID@apps_vw-dilab_com String hier rein, dann probiert der Resolver ihn ZUERST bei jedem authenticate, mit allen bestehenden client_ids weiter als Fallback in der Chain. Leer lassen für Default-Verhalten. Format: 8-4-4-4-12 hex Zeichen gefolgt von @apps_vw-dilab_com. Ungültige Werte werden stillschweigend ignoriert.",
-          "eu_data_act_auto_kickoff": "Nur relevant wenn die Integration im Read-only EU Data Act Portal-Modus läuft (die Live BFF Strategien sind gescheitert). Wenn AN, prüft der Coordinator beim Start ob pro VIN ein aktiver 15-min Custom Data Request existiert und legt einen an wenn nicht. Der Kickoff impliziert ein 1-Monats Daten-Abo auf deinem Account beim Portal, deshalb opt-in. Das Portal akzeptiert HÖCHSTENS EINEN aktiven Custom Request pro VIN gleichzeitig. Standard: aus.",
+          "eu_data_act_auto_kickoff": "Nur relevant wenn die Integration im Read-only EU Data Act Portal-Modus läuft (die Live BFF Strategien sind gescheitert). Wenn AN, prüft der Coordinator beim Start ob pro VIN ein aktiver 15-min Custom Data Request existiert und legt einen an wenn nicht. Der Kickoff impliziert ein 1-Monats Daten-Abo auf deinem Account beim Portal, deshalb hier abschaltbar. Das Portal akzeptiert HÖCHSTENS EINEN aktiven Custom Request pro VIN gleichzeitig. Standard: an — nur abschalten, wenn du den Request lieber selbst im Portal verwaltest.",
           "abrp_enable": "Live-Telemetrie an A Better Routeplanner senden. Benötigt api_key und einen Token pro Fahrzeug. Aus = keine ausgehenden Aufrufe.",
           "abrp_api_key": "Ein Entwickler-/Partnerschlüssel, den du bei iternio registrierst (wir liefern keinen). Identifiziert die Integration. Wird nie protokolliert.",
           "abrp_user_token": "Der 'Generic'-Token aus der ABRP-App: Einstellungen -> dein Auto -> Live Data. Wird nie protokolliert.",
           "keep_raw_datasets": "Nur auf dem EU-Data-Act-Portal-Kanal sinnvoll. Wenn aktiv, werden die letzten paar rohen Datensatz-ZIPs des Portals auf der Festplatte behalten (unter .storage, pro Fahrzeug und größenbegrenzt), damit sich ein falscher oder fehlender Wert aus genau den Bytes reproduzieren lässt, die dein Auto gesendet hat. Diese Dateien enthalten GPS, VIN und Telemetrie, deshalb ist die Option standardmäßig aus – schalte sie nur zur Fehlersuche ein.",
           "auto_utility_meters": "Standardmäßig aus. Wenn aktiviert, legt die Integration Home-Assistant-utility_meter-Helfer an, die geladene Energie und Kilometer pro Kalendermonat summieren – je einer pro Fahrzeug. Die Option erscheint nur, wenn ein passender Quellsensor bereits vorhanden ist. Es sind dauerhafte Helfer: Beim Wiederausschalten werden keine neuen mehr erstellt, bereits angelegte bleiben aber bestehen – entferne diese unter Einstellungen → Geräte & Dienste → Helfer.",
           "test_cohort": "Standardmäßig aus. Wenn du das einschaltest, darf die Integration experimentelle Abfragen an deinem Auto ausprobieren — etwa den laufenden Versuch, den GPS-Standort für Volkswagen-EU-Fahrzeuge auszulesen — und dir hin und wieder eine wegklickbare Benachrichtigung zeigen, die dich bittet, eine Diagnosedatei zu teilen, damit eine neue Funktion für dein Modell bestätigt werden kann. Alles, was du teilst, wird automatisch anonymisiert, bevor es dein System verlässt: Weder VIN noch GPS, Tokens oder E-Mail sind je enthalten. So werden neue Funktionen für dein Auto und für alle freigeschaltet, die dasselbe Modell fahren — und du kannst es jederzeit wieder ausschalten.",
+          "vwde_cred_relogin": "Standardmäßig aus. Betrifft nur den Volkswagen.de-Lesekanal. Wenn die stille Sitzungs-Wiederherstellung fehlschlägt, meldet sich die Integration mit dem bereits gespeicherten Passwort neu an, statt dich zu bitten, den Kanal neu hinzuzufügen. Das kann dazu führen, dass Volkswagen höchstens alle 15 Minuten einen E-Mail-Code schickt; wird ein Code verlangt, kann er nicht automatisch eingegeben werden, und du wirst gebeten, den Kanal neu hinzuzufügen.",
           "vweu_device_grant": "Nur Volkswagen, BETA. Fügt Zwei-Wege-Steuerung (Ver-/Entriegeln, Klima, Laden) und Live-CARIAD-Daten hinzu, indem du dich mit deiner Volkswagen ID anmeldest. Volkswagen stellt hier nur ein 1-Stunden-Token aus, deshalb wird dein Passwort gespeichert, um es automatisch zu erneuern — es wird nur an Volkswagens eigenen Login-Server gesendet und nie in Logs oder Diagnose geschrieben. Wenn du lieber kein Passwort speichern möchtest, nutze stattdessen die nur-lesenden Kanäle. Das Anhaken öffnet den Anmeldeschritt."
         }
       },
@@ -928,6 +930,9 @@
       "data_error_detail": {
         "name": "Datenfehler"
       },
+      "error_reason": {
+        "name": "Fehlergrund (Code)"
+      },
       "external_power_supply_state": {
         "name": "Externe Stromversorgung"
       },
@@ -1474,6 +1479,9 @@
       },
       "short_term_avg_fuel_consumption_l_100km": {
         "name": "Kurzzeit-Durchschnittsverbrauch Kraftstoff"
+      },
+      "heading": {
+        "name": "Fahrtrichtung"
       },
       "battery_soc_charge_report": {
         "name": "Akkustand (letzter Lade-Report)"
@@ -2394,61 +2402,61 @@
   "triggers": {
     "started_charging": {
       "name": "Fahrzeug hat Ladevorgang gestartet",
-      "description": "Wird ausgelöst, wenn ein Fahrzeug den Ladevorgang startet."
+      "description": "Wird ausgelöst, wenn ein Fahrzeug den Ladevorgang startet. Optional über die Option vin oder ein Zielgerät auf ein Fahrzeug einschränken."
     },
     "stopped_charging": {
       "name": "Fahrzeug hat Ladevorgang beendet",
-      "description": "Wird ausgelöst, wenn ein Fahrzeug den Ladevorgang beendet."
+      "description": "Wird ausgelöst, wenn ein Fahrzeug den Ladevorgang beendet. Optional über die Option vin oder ein Zielgerät auf ein Fahrzeug einschränken."
     },
     "plugged_in": {
       "name": "Fahrzeug eingesteckt",
-      "description": "Wird ausgelöst, wenn das Ladekabel eines Fahrzeugs angeschlossen wird."
+      "description": "Wird ausgelöst, wenn das Ladekabel eines Fahrzeugs angeschlossen wird. Optional über die Option vin oder ein Zielgerät auf ein Fahrzeug einschränken."
     },
     "unplugged": {
       "name": "Fahrzeug ausgesteckt",
-      "description": "Wird ausgelöst, wenn das Ladekabel eines Fahrzeugs getrennt wird."
+      "description": "Wird ausgelöst, wenn das Ladekabel eines Fahrzeugs getrennt wird. Optional über die Option vin oder ein Zielgerät auf ein Fahrzeug einschränken."
     },
     "locked": {
       "name": "Fahrzeug verriegelt",
-      "description": "Wird ausgelöst, wenn ein Fahrzeug verriegelt wird."
+      "description": "Wird ausgelöst, wenn ein Fahrzeug verriegelt wird. Optional über die Option vin oder ein Zielgerät auf ein Fahrzeug einschränken."
     },
     "unlocked": {
       "name": "Fahrzeug entriegelt",
-      "description": "Wird ausgelöst, wenn ein Fahrzeug entriegelt wird."
+      "description": "Wird ausgelöst, wenn ein Fahrzeug entriegelt wird. Optional über die Option vin oder ein Zielgerät auf ein Fahrzeug einschränken."
     },
     "started_preconditioning": {
       "name": "Fahrzeug-Vorklimatisierung gestartet",
-      "description": "Wird ausgelöst, wenn ein Fahrzeug die Vorklimatisierung startet."
+      "description": "Wird ausgelöst, wenn ein Fahrzeug die Vorklimatisierung startet. Optional über die Option vin oder ein Zielgerät auf ein Fahrzeug einschränken."
     },
     "stopped_preconditioning": {
       "name": "Fahrzeug-Vorklimatisierung beendet",
-      "description": "Wird ausgelöst, wenn ein Fahrzeug die Vorklimatisierung beendet."
+      "description": "Wird ausgelöst, wenn ein Fahrzeug die Vorklimatisierung beendet. Optional über die Option vin oder ein Zielgerät auf ein Fahrzeug einschränken."
     },
     "charge_target_reached": {
       "name": "Fahrzeug hat Ladeziel erreicht",
-      "description": "Wird ausgelöst, wenn der Ladestand eines Fahrzeugs sein Ziel erreicht."
+      "description": "Wird ausgelöst, wenn der Ladestand eines Fahrzeugs sein Ziel erreicht. Optional über die Option vin oder ein Zielgerät auf ein Fahrzeug einschränken."
     }
   },
   "conditions": {
     "is_charging": {
       "name": "Ein Fahrzeug lädt",
-      "description": "Prüft, ob ein Fahrzeug gerade lädt."
+      "description": "Prüft, ob ein Fahrzeug gerade lädt. Optional über die Option vin oder ein Zielgerät auf ein Fahrzeug einschränken."
     },
     "is_plugged_in": {
       "name": "Ein Fahrzeug ist eingesteckt",
-      "description": "Prüft, ob das Ladekabel eines Fahrzeugs angeschlossen ist."
+      "description": "Prüft, ob das Ladekabel eines Fahrzeugs angeschlossen ist. Optional über die Option vin oder ein Zielgerät auf ein Fahrzeug einschränken."
     },
     "is_locked": {
       "name": "Ein Fahrzeug ist verriegelt",
-      "description": "Prüft, ob ein Fahrzeug verriegelt ist."
+      "description": "Prüft, ob ein Fahrzeug verriegelt ist. Optional über die Option vin oder ein Zielgerät auf ein Fahrzeug einschränken."
     },
     "is_preconditioning": {
       "name": "Ein Fahrzeug klimatisiert vor",
-      "description": "Prüft, ob ein Fahrzeug gerade vorklimatisiert."
+      "description": "Prüft, ob ein Fahrzeug gerade vorklimatisiert. Optional über die Option vin oder ein Zielgerät auf ein Fahrzeug einschränken."
     },
     "is_charge_target_reached": {
       "name": "Ein Fahrzeug hat sein Ladeziel erreicht",
-      "description": "Prüft, ob der Ladestand eines Fahrzeugs sein Ziel erreicht hat."
+      "description": "Prüft, ob der Ladestand eines Fahrzeugs sein Ziel erreicht hat. Optional über die Option vin oder ein Zielgerät auf ein Fahrzeug einschränken."
     }
   }
 }

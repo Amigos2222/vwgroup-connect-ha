@@ -213,6 +213,22 @@ A native **Live Activity** (Lock Screen + Dynamic Island) that counts down to yo
 
 ---
 
+## Automation blueprints
+
+A small library of ready-to-import automation blueprints lives in `blueprints/automation/vag_connect/`. They're **brand-agnostic** — you pick your own entities, so they work on any car this integration supports. Import one, choose your vehicle's sensors and your phone's `notify.mobile_app_*` service, and you're set.
+
+- **Charge complete — notify** (`charge_complete_notify.yaml`) — ping your phone when charging stops or the battery reaches a level you choose.
+- **Low battery — notify** (`low_battery_notify.yaml`) — warn when the battery drops below a level and the car isn't charging.
+- **Left open while away — notify** (`left_open_away.yaml`) — alert if a door, window or the trunk stays open while the car is away from home.
+- **Preheat before departure** (`preheat_before_departure.yaml`) — start climate control at a set time on chosen weekdays, with a target temperature.
+- **Service due — notify** (`service_due_notify.yaml`) — remind you when the next service is within a number of days or kilometres.
+- **Tyre pressure warning — notify** (`tyre_pressure_notify.yaml`) — notify the moment a tyre-pressure warning appears.
+- **Parked position changed — notify** (`parked_position_changed.yaml`) — tell you when the car leaves or arrives at a zone, with a map link to where it's parked.
+
+The **ABRP** and **iOS Live Activity** blueprints described above ship from the same folder.
+
+---
+
 ## Škoda AI assistant ("Laura") — new in 3.0.0
 
 MyŠkoda's own in-car assistant, **Laura**, is available inside Home Assistant.

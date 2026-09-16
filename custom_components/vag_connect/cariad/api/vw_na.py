@@ -1839,10 +1839,20 @@ class VWNAClient:
         enabled: bool,
         departure_time: str | None,
         recurring_on: list[str] | None = None,
+        charging: bool | None = None,  # noqa: ARG002
+        climatisation: bool | None = None,  # noqa: ARG002
+        target_soc_pct: int | None = None,  # noqa: ARG002
+        one_off_day: str | None = None,  # noqa: ARG002
     ) -> None:
         # v2.0.0 (Big-Bang) — VW NA's MyVW Cloud accepts the same
         # ``recurringOn`` field shape as the EU CARIAD-BFF backend
         # (verified against MyVW 2.x app traffic).
+        # v4.7.11 (departure-timer-rich-setter) — accepts charging/
+        # climatisation/target_soc_pct/one_off_day to keep the cross-brand
+        # interface uniform, but ignores them: the myVW pretripclimate/timers
+        # write shape for those fields is not grounded (unlike the EU BFF,
+        # whose read DTO documents them), so sending guessed names to a live
+        # NA car is not safe. Wire them here only once NA traffic confirms them.
         uuid = self._vin_to_uuid.get(vin, vin)
         payload: dict[str, Any] = {"id": timer_id, "enabled": enabled}
         if departure_time:

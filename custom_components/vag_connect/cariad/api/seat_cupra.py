@@ -74,6 +74,10 @@ _NON_ENTITLED_SERVICE_STATUS: frozenset[str] = frozenset(
     }
 )
 
+# v4.7.11 — cap on the per-service connected_services breakdown so a large
+# ``mycar.services`` map can't bloat the diagnostic attribute payload.
+_CONNECTED_SERVICES_CAP = 40
+
 
 class SeatCupraClient(CariadBaseClient):
     """SEAT/CUPRA API client.
@@ -328,6 +332,14 @@ class SeatCupraClient(CariadBaseClient):
             _LOGGER.debug("charging_statistics unexpected error - returning {}")
             return {}
 
+    def _portal_credentials_stored(self) -> bool:
+        """v4.7.11 (#306, D#1415) — can the runtime EU Data Act portal fallback
+        sign in at all? ``_arm_eu_portal`` uses the stored e-mail + password; a
+        browser-login (device-grant) entry stores a synthetic username and an
+        empty password, so the answer is no and the arm must not be attempted
+        silently. Password presence is the decisive bit."""
+        return bool(getattr(self, "_password", None)) and bool(getattr(self, "_email", None))
+
     async def get_vehicles(self) -> list[str]:
         """Return VINs from garage.
 
@@ -372,6 +384,21 @@ class SeatCupraClient(CariadBaseClient):
                 "the read-only EU Data Act portal fallback.",
                 self._brand.name.upper(),
             )
+            # v4.7.11 (#306, D#1415) — same credential gap as get_status: a
+            # browser-login entry cannot sign in to the portal. Name the fix
+            # before the doomed attempt raises into the reauth prompt (which
+            # re-validates the OLA login and changes nothing).
+            if not self._portal_credentials_stored():
+                _LOGGER.warning(
+                    "%s: the EU Data Act portal fallback needs an e-mail + "
+                    "password sign-in, but this entry was set up with the "
+                    "browser login (no password stored). Add the portal as a "
+                    "read channel: Settings → Devices & Services → VW Group "
+                    "Connect → Configure → \"Add or refresh the EU Data Act "
+                    "portal read channel\" and sign in with your brand ID "
+                    "e-mail and password.",
+                    self._brand.name.upper(),
+                )
             await self._arm_eu_portal()
             armed_vins: list[str] = await self._eu_portal.list_vehicle_vins()
             return armed_vins
@@ -802,13 +829,39 @@ class SeatCupraClient(CariadBaseClient):
                     "Data Act portal fallback for status reads.",
                     self._brand.name.upper(),
                 )
+                # v4.7.11 (#306, D#1415) — the runtime portal arm signs in with
+                # the stored e-mail + password. A browser-login (device-grant)
+                # entry stores a synthetic username and NO password, so that
+                # sign-in is doomed; it used to fail silently into no_data
+                # behind the one-shot latch, leaving the owner with the WARNING
+                # above and nothing else. Say exactly what to do instead.
+                if not self._portal_credentials_stored():
+                    _LOGGER.warning(
+                        "%s: the EU Data Act portal fallback needs an e-mail + "
+                        "password sign-in, but this entry was set up with the "
+                        "browser login (no password stored). Add the portal as a "
+                        "read channel: Settings → Devices & Services → VW Group "
+                        "Connect → Configure → \"Add or refresh the EU Data Act "
+                        "portal read channel\" and sign in with your brand ID "
+                        "e-mail and password.",
+                        self._brand.name.upper(),
+                    )
+                    d.no_data = True
+                    return d
                 try:
                     await self._arm_eu_portal()
-                except Exception:  # noqa: BLE001
+                except Exception as arm_exc:  # noqa: BLE001
                     # Portal login failed — surface a no-data poll so the
                     # coordinator keeps last-known-good visible and its revive /
                     # runtime-kickoff machinery engages, instead of clobbering
                     # good telemetry with the all-None snapshot below.
+                    # v4.7.11 — and say so (class only; no credentials/URLs).
+                    _LOGGER.warning(
+                        "%s: EU Data Act portal fallback sign-in failed (%s) — "
+                        "readings stay at last-known values until the portal "
+                        "channel is added or fixed in the integration options.",
+                        self._brand.name.upper(), type(arm_exc).__name__,
+                    )
                     d.no_data = True
                     return d
                 portal_data: VehicleData = await self._eu_portal.get_vehicle_data(vin)
@@ -932,9 +985,36 @@ class SeatCupraClient(CariadBaseClient):
             services = v(mycar, "services")
             if isinstance(services, dict):
                 earliest: str | None = None
+                connected_services: list[dict[str, Any]] = []
                 for svc_name, svc_data in services.items():
                     if not isinstance(svc_data, dict):
                         continue
+                    # v4.7.11 (mirrors audi_connect_ha #854, merged 2026-09-14):
+                    # collect a compact per-service {id, expires_at, status} row so
+                    # a user sees WHICH connected service is expiring or errored,
+                    # not just the earliest-wins aggregate below. Collected for
+                    # EVERY service (entitled or not — an errored/lapsed service is
+                    # exactly what a user wants to spot here), so it sits BEFORE the
+                    # entitlement/expiry skips that guard the aggregate. Capped.
+                    if len(connected_services) < _CONNECTED_SERVICES_CAP and isinstance(
+                        svc_name, str
+                    ) and svc_name:
+                        _svc_status = svc_data.get("serviceStatus") or svc_data.get(
+                            "status"
+                        )
+                        _svc_exp = (
+                            svc_data.get("expirationDate")
+                            or svc_data.get("validUntil")
+                            or svc_data.get("expiresAt")
+                        )
+                        connected_services.append({
+                            "id": svc_name,
+                            "expires_at": (
+                                _svc_exp if isinstance(_svc_exp, str) and _svc_exp
+                                else None
+                            ),
+                            "status": _svc_status,
+                        })
                     # v2.20.0 (#S6 license-bug parity) — only ENTITLED
                     # services count toward earliest-expiry. A lapsed
                     # service keeps its old expiry in the past; without
@@ -1013,6 +1093,10 @@ class SeatCupraClient(CariadBaseClient):
                             "%s — leaving as None (raw_exc=%s)",
                             earliest, exc,
                         )
+                # v4.7.11 — surface the per-service breakdown collected above
+                # (only when at least one service carried a name).
+                if connected_services:
+                    d.connected_services = connected_services
 
             # v2.2.0 PR #18/20 (Scout #232 — matthias0304 2026-05-16) —
             # CUPRA PHEV companion to Skoda Scout #220. OLA mycar

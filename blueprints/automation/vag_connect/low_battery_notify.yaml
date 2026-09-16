@@ -1,0 +1,112 @@
+# Copyright 2026 Prash Balan (@its-me-prash) — GNU AGPL v3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# v4.7.11 — Blueprint library (notifications = the top competitor-tracker demand):
+# warn me when the car's battery gets low and it isn't plugged in charging.
+#
+# The "and not charging" guard is the whole point — you don't want a low-battery
+# nag while the car is already sitting on the charger fixing the problem itself.
+# A short debounce (for:) avoids firing on a single noisy reading.
+blueprint:
+  name: "Low battery — notify"
+  description: >
+    Notify your phone when this car's battery drops below a level you set and
+    the car is NOT charging. Handy for PHEVs and EVs you forget to plug in.
+
+
+    Point the notify field at your phone's mobile_app notify service (e.g.
+    notify.mobile_app_iphone), with or without the "notify." prefix.
+  domain: automation
+  author: VW Group Connect (@its-me-prash)
+  input:
+    battery_sensor:
+      name: "Battery level sensor"
+      description: "The vehicle's battery-level sensor (sensor.*_battery)."
+      selector:
+        entity:
+          filter:
+            - integration: vag_connect
+              domain: sensor
+              device_class: battery
+    charging_sensor:
+      name: "Charging sensor"
+      description: >
+        The vehicle's charging binary sensor (binary_sensor.*_is_charging) —
+        used to suppress the warning while it's already charging.
+      selector:
+        entity:
+          filter:
+            - integration: vag_connect
+              domain: binary_sensor
+              device_class: battery_charging
+    low_level:
+      name: "Low battery level (%)"
+      description: "Notify when the battery drops below this."
+      default: 20
+      selector:
+        number:
+          min: 5
+          max: 60
+          step: 1
+          unit_of_measurement: "%"
+          mode: slider
+    debounce_minutes:
+      name: "Debounce (minutes)"
+      description: >
+        The battery must stay below the level this long before notifying, so a
+        single noisy reading doesn't trigger a false alarm.
+      default: 5
+      selector:
+        number:
+          min: 0
+          max: 60
+          step: 1
+          unit_of_measurement: "min"
+    notify_service:
+      name: "Mobile notify service"
+      description: >
+        Your phone's notify service, e.g. notify.mobile_app_iphone. With or
+        without the "notify." prefix.
+      selector:
+        text:
+    car_name:
+      name: "Car name"
+      description: "Shown in the notification, e.g. \"ID.4\"."
+      default: "Car"
+      selector:
+        text:
+
+mode: single
+max_exceeded: silent
+
+trigger:
+  - platform: numeric_state
+    entity_id: !input battery_sensor
+    below: !input low_level
+    for:
+      minutes: !input debounce_minutes
+    id: low
+
+variables:
+  battery_sensor: !input battery_sensor
+  charging_sensor: !input charging_sensor
+  low_level: !input low_level
+  notify_service: !input notify_service
+  car_name: !input car_name
+  svc: "{{ (notify_service | default('', true)) | replace('notify.', '') }}"
+  soc: "{{ states(battery_sensor) | int(0) }}"
+
+condition:
+  # Don't nag while it's already charging — the problem is being solved.
+  - condition: state
+    entity_id: !input charging_sensor
+    state: "off"
+
+action:
+  - service: "notify.{{ svc }}"
+    data:
+      title: "{{ car_name }} — low battery"
+      message: "{{ car_name }} is at {{ soc }}% and not charging."
+      data:
+        tag: "vagc_low_batt_{{ car_name | slugify }}"
+        notification_icon: "mdi:battery-alert"

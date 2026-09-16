@@ -182,6 +182,12 @@ _PORTAL_RETRY_DELAYS = (3.0, 6.0)  # backoff (s) before giving up on a soft call
 # every file 5xxs cannot turn one poll into many hammering requests.
 _MAX_DATASET_FALLBACK = 3
 
+# v4.7.11 (#465 BooM80) — cap the value-less-field sample surfaced on the
+# connector/diagnostics. The full distinct count is kept separately; the list is
+# a sorted, bounded sample so a partial export (dozens of empty names) can't bloat
+# the state attributes / diagnostics payload.
+_VALUELESS_FIELD_CAP = 40
+
 
 def _request_start_date(meta: Any, identifier: str) -> str | None:
     """ISO ``StartDate`` of the metadata descriptor whose Identifier matches
@@ -911,6 +917,7 @@ def _walk_fields(
     _syn_out: dict[str, set[str]] | None = None,
     _contested_out: dict[str, set[str]] | None = None,
     _uuid_out: dict[str, set[str]] | None = None,
+    _delivery_out: dict[str, set[str]] | None = None,
 ) -> dict[str, str]:
     """Flatten the EU Data Act dataset into ``{field_name: value}``.
 
@@ -974,6 +981,15 @@ def _walk_fields(
     that merely share a leaf name (e.g. ``battery_state_report.soc`` vs
     ``front_left_tyre.soc``) are NEVER synonyms and can never cross-collapse — even
     if their values happen to be equal.
+
+    ``_delivery_out`` (optional, #465 BooM80): if a dict is passed, it is filled
+    with the distinct ``dataFieldName``s VW actually delivered a value for
+    (``"valued"``) vs those it shipped with a capture timestamp but NO ``value``
+    (``"valueless"``). VW's EU-DA export can ship a field's NAME + when but omit
+    the reading (BooM80's official export: 10 names, only 3 valued), so the raw
+    feed looks "complete" while most fields carry nothing. Read-only visibility —
+    a value-less point is still not surfaced (there is nothing to surface).
+    Envelope-noise + credential names are excluded from both sets.
     """
     # name -> (value_str, ts, ts_real, ts_inherited); ts_real distinguishes a
     # genuine per-point timestamp from the inherited dataset-level floor
@@ -1073,12 +1089,14 @@ def _walk_fields(
     ) -> None:
         if isinstance(node, dict):
             ts, ts_real, ts_inh = node_ts, node_ts_real, node_ts_inherited
+            own_ts = False  # #465: node carried its OWN sibling timestamp key
             for tk in _TS_KEYS:
                 if tk in node:
                     parsed = _parse_ts(node[tk])
                     if parsed is not None:
                         # OWN per-point timestamp — reliable, NOT inherited (#465).
                         ts, ts_real, ts_inh = parsed, True, False
+                        own_ts = True
                         break
             # data-point shape: {dataFieldName|name: X, value: Y}
             fname = node.get("dataFieldName") or node.get("name")
@@ -1096,6 +1114,25 @@ def _walk_fields(
                 and _sc_key.strip().lower() in _CHARGE_START_SOC_UUIDS
             ):
                 fname = "battery_state_report.soc_at_charge_start"
+            # v4.7.11 (#465 BooM80) — field-delivery honesty. Classify this data
+            # point on ONE axis so diagnostics can read "N of M": a point VW
+            # shipped a value for is "valued"; one it delivered with its OWN
+            # capture timestamp but no ``value`` is "valueless" — a name VW sent
+            # empty (BooM80's official export: 10 names, 3 valued) that otherwise
+            # vanished here silently and made a thin feed look complete. Require
+            # own_ts (not merely an inherited floor) so a plain nested container
+            # that happens to carry a ``name`` is not miscounted. Distinct names;
+            # envelope-noise + credential names excluded from both sets.
+            if (
+                _delivery_out is not None
+                and isinstance(fname, str) and fname.strip()
+                and not _is_envelope_noise(fname)
+                and fname.rsplit(".", 1)[-1] not in _CREDENTIAL_FIELDS
+            ):
+                if "value" in node:
+                    _delivery_out.setdefault("valued", set()).add(fname.strip())
+                elif own_ts:
+                    _delivery_out.setdefault("valueless", set()).add(fname.strip())
             if fname is not None and "value" in node:
                 add(fname, node.get("value"), ts, ts_real, ts_inh)
                 # v2.17.4/v2.17.5 — when the leaf name is a GENERIC token, also key
@@ -1548,7 +1585,40 @@ def map_dataset_to_vehicle_data(
     used: set[str] = set()
     syn = field_syn or {}
 
-    def first(*names: str) -> str | None:
+    def _record(attr: str | None, chosen: str | None, names: tuple[str, ...]) -> None:
+        """v4.7.11 (#465/#529/#1218 parity ADOPT) — stash the RESOLVED source
+        leaf's genuine capture time (and any unsettled tie) under the TARGET
+        VehicleData attribute, so an EU-DA sensor can expose per-value freshness.
+
+        Called from first()/first_freshest() with the leaf ACTUALLY chosen, so the
+        recorded ts always belongs to the value the mapper assigns — no duplicated
+        candidate lists, no drift if the alias order changes. ``field_ts`` holds
+        ONLY genuine per-point timestamps (the dataset floor is filtered out in
+        _walk_fields), so a recorded entry always means the sensor's freshness is
+        a real "point", never the ~15-min dataset floor. Ambiguity reuses the same
+        ``contested`` map the freshness resolver already built: a genuine, non-mode
+        -resolvable tie on the chosen leaf (or one of the call's aliases) is noted
+        so the reading's uncertainty is visible per entity. Opt-in per call site
+        (``record_as``) — the mapper has 200+ assignments and only the sensor-
+        facing ones need freshness; adding a site is a one-word kwarg."""
+        if not attr:
+            return
+        if chosen is not None:
+            ts = (field_ts or {}).get(chosen)
+            if ts is not None:
+                iso = _epoch_or_iso(str(ts))
+                if iso:
+                    d.field_captured_ts[attr] = iso
+        for cand in [c for c in (chosen, *names) if c]:
+            vals = (contested or {}).get(cand)
+            if vals and len(vals) > 1:
+                ordered = sorted(vals)
+                d.ambiguous_fields[attr] = (
+                    f"{len(ordered)} candidates disagree: {' vs '.join(ordered)}"
+                )
+                break
+
+    def first(*names: str, record_as: str | None = None) -> str | None:
         for n in names:
             if n in fields:
                 val = fields[n]
@@ -1597,10 +1667,11 @@ def map_dataset_to_vehicle_data(
                 for other in syn.get(n, frozenset()):
                     if other in fields:
                         used.add(other)
+                _record(record_as, n, names)
                 return val
         return None
 
-    def first_freshest(*names: str) -> str | None:
+    def first_freshest(*names: str, record_as: str | None = None) -> str | None:
         """Like ``first()``, but when the SAME datum is reported under multiple
         DIFFERENT-source aliases that disagree, pick the FRESHEST by capture
         time instead of the first in list order (#465, Arno-MA-73: portal SoC
@@ -1644,6 +1715,7 @@ def map_dataset_to_vehicle_data(
                 [(c[2], c[3], None if c[0] == float("-inf") else c[0]) for c in cands],
                 best[2], best[3],
             )
+        _record(record_as, best[2], names)
         return best[3]
 
     def freshest_by_value(*names: str) -> str | None:
@@ -1761,7 +1833,8 @@ def map_dataset_to_vehicle_data(
                         "ac1108b1-b8cc-3db9-a663-03d387e42223",
                         "0a18a053-b4b0-3db1-be44-a6c5dba629b1",
                         "f89ed652-d104-3fa6-b7e2-ab7543309e7b",
-                        "506cb83e-f99f-3af3-bbeb-0429b69a78d9"))
+                        "506cb83e-f99f-3af3-bbeb-0429b69a78d9",
+                        record_as="battery_soc"))
     # #1179-1183 — evaluate first_freshest() UNCONDITIONALLY so every SoC alias
     # present in the dataset is consumed into ``used`` (and thus leaves
     # raw_unmapped_fields / the Scout), even when the VALID-gated HV level below
@@ -1783,7 +1856,8 @@ def map_dataset_to_vehicle_data(
     odo = _to_int(first("mileage.value", "mileage", "odometer", "totalMileage",
                         # v2.29.x — UUID last-resort (openWB vweuda catalog).
                         "41c0805c-43e5-313e-9dfb-356cb8d20f7c",
-                        "30cc36fd-71ca-3c09-9296-e94ebd47bd2b"))
+                        "30cc36fd-71ca-3c09-9296-e94ebd47bd2b",
+                        record_as="odometer_km"))
     if odo is not None:
         # v3.0.2 (#1122) — _GLOBAL_SENTINELS drops the RAW uint32 sentinel here,
         # but not its 0.1-km-scaled form (429_496_729); the shared guard does.
@@ -1963,7 +2037,8 @@ def map_dataset_to_vehicle_data(
                         "estimatedcruisingrangeprimary.value",
                         "estimatedcruisingrangeprimary",
                         "153e8c40-4c6c-3c17-a11b-0ecc35d55b81",
-                        "0ca40e18-0564-3eda-bcc0-7aee9ef44f04"))
+                        "0ca40e18-0564-3eda-bcc0-7aee9ef44f04",
+                        record_as="range_km"))
     if rng is not None:
         d.range_km = rng
         if d.electric_range_km is None:
@@ -2023,12 +2098,13 @@ def map_dataset_to_vehicle_data(
     if ce is not None and ce >= 0:
         d.charge_session_energy_kwh = ce
 
-    tsoc = _to_int(first("settings.target_soc", "target_soc", "targetSOC_pct"))
+    tsoc = _to_int(first("settings.target_soc", "target_soc", "targetSOC_pct",
+                         record_as="target_soc"))
     if tsoc is not None:
         d.target_soc = tsoc
 
     cs = first("charging_state_report.current_charge_state", "current_charge_state",
-               "chargingState", "charging_state")
+               "chargingState", "charging_state", record_as="charging_state")
     if cs:
         # is_charging from the RAW value; store a shortened label for display
         # (a13/A4 — strips verbose VW enum prefixes). #764 — the portal one-time
@@ -2155,7 +2231,7 @@ def map_dataset_to_vehicle_data(
         )
 
     plug = first("charging_plug1_connectionstate", "plug_connection_state",
-                 "plugConnectionState", "plug_state")
+                 "plugConnectionState", "plug_state", record_as="plug_state")
     if plug is not None:
         d.plug_state = plug
         d.plug_connected = str(plug).lower() in ("connected", "plugged", "true", "1")
@@ -3142,6 +3218,17 @@ def map_dataset_to_vehicle_data(
         if _cerrs and _cerrs != "#0" and _cerrn != 0:
             d.charging_error_code = _cerrs
 
+    # v4.7.11 (#1421 @skornehl) — "ErrorReason" (single dict UUID b477dd84,
+    # cluster "All Data"). Dict documents no enum → surface the RAW code; drop
+    # the "0"/"0.0"/"#0" no-error sentinels the same way charging_error_code
+    # does, so the sensor reads unavailable instead of a bogus "0".
+    _ereason = first("ErrorReason")
+    if _ereason is not None:
+        _ereasons = str(_ereason).strip()
+        _ereasonn = _to_float(_ereasons)
+        if _ereasons and _ereasons != "#0" and _ereasonn != 0:
+            d.error_reason = _ereasons
+
     # #923 — 'unsupported' is a no-reading sentinel here (a real value is a
     # minutes count); drop it so the target-SoC time sensor reads unavailable
     # rather than the literal word. Non-string values pass through untouched.
@@ -3206,26 +3293,36 @@ def map_dataset_to_vehicle_data(
     # locked_state 2=locked/3=unlocked block above; do NOT reuse those helpers).
     # NOTE (polarity): the 2=safe/3=unsafe mapping is documented in the dict only
     # for the three door safe_state_* fields (front_right / rear_left /
-    # rear_right). The bonnet + tailgate safe-state polarity is INFERRED from the
-    # same enum family (and from the locked_state block's bonnet entry); if a live
-    # payload shows otherwise these two should be re-verified.
+    # rear_right). The bonnet + tailgate dict entries document ONLY
+    # unsupported(0)/invalid(1)/unsafe(3) — no safe(2) — so a "3" on them is not a
+    # reliable unsafe signal (see the aggregate note below).
     _bonnet_lock = _to_int(first("locked_state_front_engine_bonnet"))
     if _bonnet_lock in (2, 3):
         d.bonnet_locked = _bonnet_lock == 2
-    # Rolled-up "all present closures safe" aggregate (2=safe). Only dict-confirmed
-    # safe_state_* fields (NO safe_state_front_left_door — it is absent from the
-    # spec; the documented set is front_right/rear_left/rear_right + bonnet/tailgate).
+    # v4.7.11 (grounded on a competing EU-Data-Act reader's issue #53, 2026-09-12): a live
+    # SEAT/CUPRA delivery showed safe_state_front_engine_bonnet=3 while the bonnet
+    # was CLOSED (open_state_front_engine_bonnet=3=closed in that same dataset).
+    # The dict documents no safe(2) for bonnet/tailgate, so folding their "3" into
+    # the roll-up flipped closures_secured to False on an actually-secured car.
+    # Drop both from the aggregate — keep ONLY the three dict-confirmed door
+    # safe_state_* fields (safe(2) documented). bonnet_locked above still comes
+    # from locked_state_front_engine_bonnet. (No safe_state_front_left_door — it
+    # is absent from the spec; the documented door set is front_right/rear_left/
+    # rear_right.)
     _safe_vals = [
         _to_int(first(_n)) for _n in (
-            "safe_state_front_engine_bonnet",
             "safe_state_front_right_door",
             "safe_state_rear_left_door", "safe_state_rear_right_door",
-            "safe_state_tailgate",
         )
     ]
     _safe_present = [v for v in _safe_vals if v in (2, 3)]
     if _safe_present:
         d.closures_secured = all(v == 2 for v in _safe_present)
+    # Still CONSUME the two dropped leaves (their only consumer was the aggregate)
+    # so the Scout does not re-report them as unmapped every poll; their unreliable
+    # polarity means we read-and-discard rather than surface a value.
+    first("safe_state_front_engine_bonnet")
+    first("safe_state_tailgate")
 
     # state_* closures (2=open 3=closed; 0=unsupported/1=invalid → ignore).
     _sunroof_vals = [
@@ -3850,6 +3947,17 @@ class EUDataActConnector:
         self.last_no_data_at: str | None = None
         self.no_data_count: int = 0
         self.last_snapshot_at: str | None = None
+        # v4.7.11 (#465 BooM80) — last dataset's field-delivery honesty. VW's
+        # EU-DA export can ship a data point's NAME + capture timestamp but omit
+        # the ``value`` (BooM80's official export: 10 names, only 3 valued), so
+        # the raw feed reads "complete" while most fields carry nothing. Reset
+        # per parse in get_vehicle_data. ``last_valued_count`` /
+        # ``last_valueless_count`` are the full distinct totals (the "N of M"
+        # ratio); ``last_valueless_fields`` is a sorted, capped sample of the
+        # empty names for triage. Read-only observability, no behaviour change.
+        self.last_valued_count: int = 0
+        self.last_valueless_count: int = 0
+        self.last_valueless_fields: list[str] = []
 
     @staticmethod
     def _now_iso() -> str:
@@ -3872,6 +3980,22 @@ class EUDataActConnector:
         """Record a successful dataset poll: clear the reason, stamp the snapshot."""
         self.last_no_data_reason = ""
         self.last_snapshot_at = self._now_iso()
+
+    def _record_field_delivery(self, delivery: dict[str, set[str]]) -> None:
+        """Reset + store the last dataset's field-delivery honesty (#465 BooM80).
+
+        ``delivery`` is filled by ``_walk_fields``: ``"valued"`` = distinct
+        ``dataFieldName``s VW delivered a value for, ``"valueless"`` = distinct
+        names it shipped with a capture timestamp but no ``value``. Called on
+        EVERY parse (before the empty-dataset early return) so the counters can
+        never present a prior poll's ratio as the current one. The value-less
+        names are still never surfaced as readings — this is visibility only.
+        """
+        valued = delivery.get("valued") or set()
+        valueless = delivery.get("valueless") or set()
+        self.last_valued_count = len(valued)
+        self.last_valueless_count = len(valueless)
+        self.last_valueless_fields = sorted(valueless)[:_VALUELESS_FIELD_CAP]
 
     def set_bearer(self, token: str) -> None:
         """Inject / refresh the device-grant access_token for Bearer mode.
@@ -4779,9 +4903,17 @@ class EUDataActConnector:
         field_syn: dict[str, set[str]] = {}  # v2.15.4: bare/qualified synonym map
         contested: dict[str, set[str]] = {}  # same capture time, disagreeing values
         field_uuids: dict[str, set[str]] = {}  # generic-leaf -> content UUID(s)
-        fields = _walk_fields(payload, field_ts, field_syn, contested, field_uuids)
+        delivery: dict[str, set[str]] = {}  # #465: valued vs value-less names
+        fields = _walk_fields(
+            payload, field_ts, field_syn, contested, field_uuids, delivery
+        )
+        # #465 BooM80 — record the value/value-less split BEFORE the empty-dataset
+        # early return, so the diagnostic reflects THIS parse even when VW shipped
+        # only names (all value-less → fields empty → treated as "no data").
+        self._record_field_delivery(delivery)
         _LOGGER.debug(
-            "EU Data Act portal: %s dataset carried %d fields", vin[-6:], len(fields)
+            "EU Data Act portal: %s dataset carried %d fields (%d value-less)",
+            vin[-6:], len(fields), self.last_valueless_count,
         )
         # v2.13.0 (P1) — an empty/no-content ZIP (now returned as {} instead of
         # raising) means no data this poll: flag it so the no-data notice fires,

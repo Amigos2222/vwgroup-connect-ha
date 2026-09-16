@@ -522,12 +522,19 @@ def _register_services(hass: HomeAssistant) -> None:
         # list (e.g. ``["MONDAY","TUESDAY","FRIDAY"]``). Forwarded to
         # the brand client; ignored by clients that don't support
         # weekly preheat (e.g. Porsche).
+        # v4.7.11 (departure-timer-rich-setter) — forward the optional rich
+        # fields (charging / climatisation / target SoC / one-off day). Only the
+        # CARIAD client, and only for test-cohort entries, actually sends them.
         await _coord_writeable(call.data["vin"]).async_set_departure_timer(
             call.data["vin"],
             int(call.data["timer_id"]),
             bool(call.data["enabled"]),
             call.data.get("departure_time"),
             call.data.get("recurring_on"),
+            charging=call.data.get("charging"),
+            climatisation=call.data.get("climatisation"),
+            target_soc_pct=call.data.get("target_soc_pct"),
+            one_off_day=call.data.get("one_off_day"),
         )
 
     async def _handle_engine_start(call: ServiceCall) -> None:
@@ -784,6 +791,15 @@ def _register_services(hass: HomeAssistant) -> None:
                 vol.Optional("recurring_on"):   vol.All(
                     cv.ensure_list, [cv.string]
                 ),
+                # v4.7.11 (departure-timer-rich-setter, myskoda #631/#640) —
+                # optional rich fields; only the CARIAD test-cohort path sends
+                # them, the other brands ignore them (uniform interface).
+                vol.Optional("charging"):       cv.boolean,
+                vol.Optional("climatisation"):  cv.boolean,
+                vol.Optional("target_soc_pct"): vol.All(
+                    vol.Coerce(int), vol.Range(min=10, max=100)
+                ),
+                vol.Optional("one_off_day"):    cv.string,
             })),
         # v1.14.0 (#28) — Audi-only ICE Remote Engine Start/Stop.
         ("engine_start",                   _handle_engine_start,        SERVICE_VIN_SCHEMA),
@@ -1147,5 +1163,14 @@ async def _async_update_listener(
                     await apply_cohort()
                 except Exception:  # noqa: BLE001 — never break a settings save
                     _LOGGER.debug("test-cohort re-apply skipped", exc_info=True)
+            # v4.7.11 (#465/#632/#966) — the vw.de credential-relogin opt-in was
+            # applied at setup only, so toggling it here silently needed a restart.
+            # Re-apply live, same fail-soft contract as the cohort flag.
+            apply_relogin = getattr(coordinator, "_apply_cred_relogin", None)
+            if callable(apply_relogin):
+                try:
+                    await apply_relogin()
+                except Exception:  # noqa: BLE001 — never break a settings save
+                    _LOGGER.debug("vw.de cred-relogin re-apply skipped", exc_info=True)
             # Trigger one immediate refresh so users see the effect
             await coordinator.async_request_refresh()

@@ -1,0 +1,75 @@
+# Copyright 2026 Prash Balan (@its-me-prash) — GNU AGPL v3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# v4.7.11 — Blueprint library (notifications = the top competitor-tracker
+# demand): tell me the moment a tyre-pressure warning shows up.
+#
+# The integration exposes tyre warnings as PROBLEM-class binary sensors that go
+# ``on`` when the car reports low/critical pressure (naming varies by brand:
+# binary_sensor.*_tire_pressure_warning on Porsche, *_warning_tyre elsewhere).
+# You pick whichever your car has (multiple allowed), and this fires on the
+# off->on edge so you're warned once per event, not on every poll.
+blueprint:
+  name: "Tyre pressure warning — notify"
+  description: >
+    Notify your phone the moment this car raises a tyre-pressure warning. Pick
+    the car's tyre-pressure warning binary sensor — depending on the brand it's
+    binary_sensor.*_tire_pressure_warning or binary_sensor.*_warning_tyre; you
+    can select more than one.
+
+
+    Point the notify field at your phone's mobile_app notify service (e.g.
+    notify.mobile_app_iphone), with or without the "notify." prefix.
+  domain: automation
+  author: VW Group Connect (@its-me-prash)
+  input:
+    tyre_sensors:
+      name: "Tyre pressure warning sensor(s)"
+      description: >
+        The car's tyre-pressure warning binary sensor(s). Select the one(s) your
+        car exposes.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - integration: vag_connect
+              domain: binary_sensor
+              device_class: problem
+    notify_service:
+      name: "Mobile notify service"
+      description: >
+        Your phone's notify service, e.g. notify.mobile_app_iphone. With or
+        without the "notify." prefix.
+      selector:
+        text:
+    car_name:
+      name: "Car name"
+      description: "Shown in the notification, e.g. \"ID.4\"."
+      default: "Car"
+      selector:
+        text:
+
+mode: single
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input tyre_sensors
+    to: "on"
+    id: warned
+
+variables:
+  notify_service: !input notify_service
+  car_name: !input car_name
+  svc: "{{ (notify_service | default('', true)) | replace('notify.', '') }}"
+
+action:
+  - service: "notify.{{ svc }}"
+    data:
+      title: "{{ car_name }} — tyre pressure"
+      message: >
+        {{ car_name }} raised a tyre-pressure warning ({{
+        trigger.to_state.name }}). Check the tyres before driving.
+      data:
+        tag: "vagc_tyre_warn_{{ car_name | slugify }}"
+        notification_icon: "mdi:car-tire-alert"

@@ -427,6 +427,46 @@ set_departure_timer:
             - FRIDAY
             - SATURDAY
             - SUNDAY
+    charging:
+      name: Laden
+      description: >-
+        v4.7.11 Optional. Ob der Timer das Laden auslöst. Wird derzeit nur für
+        die Test-Kohorte (CARIAD/vw.de) übermittelt; andere Marken ignorieren
+        das Feld.
+      required: false
+      selector:
+        boolean:
+    climatisation:
+      name: Klimatisierung
+      description: >-
+        v4.7.11 Optional. Ob der Timer den Innenraum vorklimatisiert. Wird
+        derzeit nur für die Test-Kohorte (CARIAD/vw.de) übermittelt; andere
+        Marken ignorieren das Feld.
+      required: false
+      selector:
+        boolean:
+    target_soc_pct:
+      name: Ziel-Ladestand
+      description: >-
+        v4.7.11 Optional. Ziel-Batteriestand in Prozent (10–100), auf den der
+        Timer lädt. Wird derzeit nur für die Test-Kohorte (CARIAD/vw.de)
+        übermittelt.
+      required: false
+      selector:
+        number:
+          min: 10
+          max: 100
+          step: 5
+          unit_of_measurement: "%"
+    one_off_day:
+      name: Einmaliger Tag
+      description: >-
+        v4.7.11 Optional. Datum (JJJJ-MM-TT). Wenn gesetzt, feuert der Timer
+        einmalig an diesem Tag statt wiederkehrend. Wird derzeit nur für die
+        Test-Kohorte (CARIAD/vw.de) übermittelt.
+      required: false
+      selector:
+        date:
 
 # v1.14.0 (#28) — Audi-only ICE Remote Engine Start/Stop.
 engine_start:

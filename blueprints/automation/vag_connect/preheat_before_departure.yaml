@@ -1,0 +1,102 @@
+# Copyright 2026 Prash Balan (@its-me-prash) — GNU AGPL v3.0-or-later
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# v4.7.11 — Blueprint library (comfort/notifications = the top competitor-tracker
+# demand): warm the cabin on a schedule so you climb into a comfortable car.
+#
+# Fires at a departure time you set, on the weekdays you drive, and calls
+# start_climate_control for the chosen car with your target temperature.
+# start_climate_control is the rich variant on purpose: it sets the temperature
+# on Audi / VW EU (CARIAD BFF) and transparently falls through to the basic
+# start_climatisation on every other brand, so this one blueprint stays
+# brand-agnostic instead of needing per-brand copies.
+blueprint:
+  name: "Preheat before departure"
+  description: >
+    Pre-condition this car at a set time — e.g. warm it before your morning
+    commute. At the chosen time, on the chosen weekdays, it starts climate
+    control for the car with your target temperature.
+
+
+    Uses start_climate_control, which applies the temperature on Audi and VW EU
+    cars and falls back to a plain climate start on other brands (they ignore the
+    temperature and use their own default). Pre-conditioning needs enough charge
+    or fuel; if the car is asleep the first attempt may just wake it. Prefer a
+    calendar? Trigger the same start_climate_control service from your own
+    calendar automation with a negative offset.
+  domain: automation
+  author: VW Group Connect (@its-me-prash)
+  input:
+    vehicle_device:
+      name: "Vehicle"
+      description: "The car to preheat."
+      selector:
+        device:
+          integration: vag_connect
+    departure_time:
+      name: "Departure time"
+      description: "When to start pre-conditioning."
+      default: "07:00:00"
+      selector:
+        time:
+    weekdays:
+      name: "Days"
+      description: "Only preheat on these weekdays."
+      default: [mon, tue, wed, thu, fri]
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: "Monday"
+              value: mon
+            - label: "Tuesday"
+              value: tue
+            - label: "Wednesday"
+              value: wed
+            - label: "Thursday"
+              value: thu
+            - label: "Friday"
+              value: fri
+            - label: "Saturday"
+              value: sat
+            - label: "Sunday"
+              value: sun
+    target_temp:
+      name: "Target temperature (°C)"
+      description: >
+        Cabin temperature to aim for. Applied on Audi / VW EU; other brands use
+        their own default.
+      default: 21
+      selector:
+        number:
+          min: 15
+          max: 30
+          step: 0.5
+          unit_of_measurement: "°C"
+          mode: slider
+
+# single: one preheat per departure; a re-fire shouldn't stack requests.
+mode: single
+max_exceeded: silent
+
+trigger:
+  - platform: time
+    at: !input departure_time
+
+variables:
+  weekdays: !input weekdays
+  device_id: !input vehicle_device
+  target_temp: !input target_temp
+
+condition:
+  # Only on the selected weekdays. now().weekday(): Mon=0 … Sun=6.
+  - condition: template
+    value_template: >
+      {{ ['mon','tue','wed','thu','fri','sat','sun'][now().weekday()]
+         in weekdays }}
+
+action:
+  - service: vag_connect.start_climate_control
+    data:
+      device_id: "{{ device_id }}"
+      temp_c: "{{ target_temp }}"

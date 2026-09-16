@@ -61,6 +61,7 @@ from .const import (
     CONF_SUPPLEMENTARY_AUTHPROXY,
     CONF_SUPPLEMENTARY_AUTHPROXY_COOKIES,
     CONF_TEST_COHORT,
+    CONF_VWDE_CRED_RELOGIN,
     CONF_SUPPLEMENTARY_EU_PORTAL,
     CONF_SUPPLEMENTARY_EU_PORTAL_PASSWORD,
     CONF_SUPPLEMENTARY_EU_PORTAL_USERNAME,
@@ -3013,6 +3014,20 @@ class VagConnectOptionsFlow(config_entries.OptionsFlow):
                     default=current_options.get(
                         CONF_TEST_COHORT,
                         current_data.get(CONF_TEST_COHORT, False),
+                    ),
+                ): _BOOL_SELECTOR,
+                # v4.7.11 (#465/#632/#966) — opt-in: when the Volkswagen.de read
+                # channel's silent session resume dies, re-login once with the
+                # stored password instead of asking the user to re-add the channel.
+                # Cooldown-bounded so it can trigger at most one VW email code
+                # every ~15 min; an actual code still needs the interactive re-add
+                # (OTP is never auto-answered). Default OFF; only meaningful on a
+                # vw.de channel, harmless elsewhere.
+                vol.Optional(
+                    CONF_VWDE_CRED_RELOGIN,
+                    default=current_options.get(
+                        CONF_VWDE_CRED_RELOGIN,
+                        current_data.get(CONF_VWDE_CRED_RELOGIN, False),
                     ),
                 ): _BOOL_SELECTOR,
                 # P1-5 — opt-in diagnostic archive of raw EU Data Act dataset

@@ -42,6 +42,76 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+## [4.7.11] - 2026-09-16 — Competitor parity round: vw.de master data that stays, fresher portal readings, richer timers, honest diagnostics
+
+### Fixed
+- **vw.de: colour, model and the exterior pictures no longer vanish when the live web reads are refused.**
+  Those three come only from the vw.de channel. When VW refuses the channel's live reads for a car, the
+  read aborted before the calls that fetch them, and a poll that brought nothing new wiped the values
+  already shown. They are now fetched on their own even when the live reads are walled, kept as
+  last-known values across empty polls (they don't change for a car), and the log names which vw.de
+  read was refused and with which status — so the next capture says what VW actually serves
+  (#465, thanks @toglo for both logs).
+- **vw.de debug lines now mask the VIN inside request paths.** A second pattern with the same name
+  had shadowed the URL masker, so the path VIN slipped through into debug logs (the JSON-body masking
+  was unaffected). Found while adding the line above.
+- **"Closures secured" no longer flips to false on a closed bonnet/tailgate.** VW's bonnet and tailgate
+  "safe state" values don't follow the door polarity (a live capture shows 3 while closed); the
+  aggregate now uses the three door fields only.
+- **Diagnostics show the vw.de channel's read outcomes.** The vw.de charging/maintenance reads record
+  their status, and the connector's outcomes are exported even before the first read — the table a
+  reporter asked for was never wired (#1313, thanks @realynot).
+- **The portal's `heading` value finally has a sensor.** 4.7.6 parsed the heading that arrives next to
+  `persLocation` on MEB portal cars, and its release note said it came through as a sensor — it didn't;
+  there was no entity. *Heading* (degrees, disabled by default) now exists (#1378, thanks @Laurentwb).
+- **Options help text for the EU Data Act auto-kickoff said "opt-in, off by default" — it has been on by
+  default since v2.17.1.** Corrected in all 13 languages; taken literally, the old text could talk you into
+  switching off the very thing that creates your data request.
+- **SEAT/CUPRA probe script: a host name that doesn't exist no longer reads as "unreachable from you".**
+  `mal.prd.ece.vwg-connect.com` was only ever a token audience, not a host (NXDOMAIN at VW's own
+  nameserver); the probe dropped it and now tells a DNS miss apart from a connection failure instead of
+  blaming the reporter's network (#306, thanks @goncal for the three-resolver check).
+- **CONTRIBUTORS.md caught up:** 18 reporters credited in the 4.7.x notes were missing from the list.
+- **CUPRA/SEAT browser-login entries: the portal fallback now says why it can't sign in.** The 4.7.10
+  automatic EU Data Act portal fallback signs in with the stored e-mail + password — an entry set up
+  with the browser login stores none, so the sign-in failed silently and readings stayed empty with only
+  the "arming" line in the log. The doomed attempt is skipped and the log now names the fix (Configure →
+  "Add or refresh the EU Data Act portal read channel"); a failed portal sign-in is logged too (#306,
+  D#1415).
+
+### Added
+- **Portal feed health shows how much of VW's export actually carries values.** VW's EU Data Act
+  export can deliver field names with timestamps but no value at all (a Tiguan III export: 10 fields,
+  3 with values). The portal-feed-health sensor now reports the fields with values, the count of
+  fields delivered without one, and their names — so "ok" no longer reads as "complete" when it isn't
+  (#465, thanks @BooM80 for reproducing it in VW's own export).
+- **Scout feed: `ErrorReason`** now feeds a diagnostic *Error Reason Code* sensor (disabled by default,
+  raw code, "0" = no error) (#1421, thanks @skornehl).
+- **vw.de: opt-in re-login with the stored password when the web session dies.** Off by default. When
+  the silent session resume fails and you've switched it on, the integration signs in once with your
+  stored password (at most every 15 minutes); if VW asks for an e-mail code it stops there without
+  submitting anything and the usual re-add-with-code path applies. Mirrors what the other volkswagen.de
+  project does, kept opt-in because a fresh sign-in can trigger one e-mail code (#465, #632, #966).
+- **Portal readings say how fresh they are.** Sensors fed by the EU Data Act feed carry
+  `data_captured_at`, `freshness_source` and `ambiguous_reading` attributes (the last one flags a
+  reading whose candidates disagreed under one capture time) — no per-poll churn, no new entities
+  (#465, #529, #1218).
+- **Departure timers can carry charging, climatisation, target battery % and a one-off date.** The
+  `set_departure_timer` service accepts the extra fields; they are sent on the CARIAD path only for
+  entries in the test cohort until one live capture confirms the field names, and ignored otherwise.
+- **Connected-services breakdown.** The subscription diagnostic sensor lists each connected service
+  with its expiry and status as attributes (capped), not just the earliest expiry.
+- **vw.de cars: the side/¾ render becomes the vehicle picture**, and the (static) model name and
+  render list are cached for 24 h / 6 h instead of being re-fetched every poll (#1229).
+- **Porsche: charging power on newer cars** (`chargingPowerkW`, the legacy field reads 0 on a 2026 Macan
+  Electric) and the climatiser target temperature now feed their sensors.
+- **Seven ready-made automation blueprints** — charge complete, low battery, door/window/trunk left open
+  while away, pre-heat before departure, service due, tyre-pressure warning, parking position changed —
+  under *Settings → Automations → Blueprints*; notifications were the most-requested thing across every
+  car integration's tracker, and the data was already there.
+- **Named triggers and conditions can target one car.** An optional `vin` (or the car's device) scopes
+  the experimental named triggers/conditions; unset keeps today's account-wide behaviour.
+
 ## [4.7.10] - 2026-09-14 — Portal logins that actually complete, and a refresh loop that hammered vw.de
 
 ### Fixed
@@ -162,7 +232,8 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   through as sensors. The per-trip id is recognised as metadata so it stops being reported as an
   undiscovered field. Grounded on real Škoda Elroq and Audi captures (#1378, #1375).
   *(Corrected in 4.7.8: the original note implied every car sends `persLocation` and that the trip
-  id is used for correlation — neither is the case.)*
+  id is used for correlation — neither is the case. Corrected in 4.7.11: heading was parsed but had
+  no sensor until 4.7.11.)*
 - **Porsche's captcha can now be solved right in the setup dialog.** Porsche's login can put up an
   Auth0 captcha; the integration now shows it inline during setup, re-authentication and reconfigure
   so you can type it and continue. The login also stops declaring passkey support (matching a proven

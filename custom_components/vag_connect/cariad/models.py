@@ -1353,6 +1353,13 @@ class VehicleData:
     # who want to see "this VIN reports N capabilities").
     capabilities_count: int | None = None
 
+    # v4.7.11 (mirrors audi_connect_ha #854, merged 2026-09-14) — compact
+    # per-capability breakdown [{id, expires_at, status}, ...], capped at 40, so a
+    # user can see WHICH connected service is expiring or errored rather than only
+    # the earliest-wins ``subscription_*`` aggregate. Surfaced as an attribute on
+    # the existing capabilities_count diagnostic sensor (state unchanged).
+    connected_services: list[dict[str, Any]] = field(default_factory=list)
+
     # Departure timers
     departure_timer_1_enabled: bool = False
     departure_timer_1_time: str | None = None
@@ -1686,6 +1693,22 @@ class VehicleData:
     # and a layer that knows the previous poll picks the plausible one. Keyed
     # by the raw portal field name; empty on the overwhelming majority of polls.
     contested_fields: dict[str, list[str]] = field(default_factory=dict)
+    # v4.7.11 (#465/#529/#1218 parity ADOPT) — per-VALUE freshness surfaced to
+    # entities. Maps a VehicleData ATTRIBUTE name to the ISO-8601 UTC capture
+    # time of the exact EU-DA source leaf the mapper resolved onto it (a GENUINE
+    # per-point timestamp, never the ~15-min dataset floor), so an EU-DA sensor
+    # can answer "when was THIS number actually measured" instead of only "when
+    # did we last poll". Only populated for EU-DA-sourced fields; the channel
+    # merge carries it from the owning source and drops it when a live channel
+    # supersedes the EU-DA value. Never merged generically (see _channel_merge
+    # ``_SKIP_FIELDS``).
+    field_captured_ts: dict[str, str] = field(default_factory=dict)
+    # v4.7.11 — attribute names whose EU-DA source shipped several DISAGREEING
+    # candidates under one capture time (a genuine tie the mode-resolver could
+    # not settle, #1088). Value is a short human note ("2 candidates disagree:
+    # 78 vs 92") so a reading's uncertainty is visible per entity. Empty on the
+    # vast majority of polls. Same skip/carry handling as field_captured_ts.
+    ambiguous_fields: dict[str, str] = field(default_factory=dict)
 
     # ── v2.15.1 — EU Data Act + BFF wire-key mapping (2.15.0 plan) ──────────
     # New fields declared once on the shared model; each is written by the EU
@@ -1716,6 +1739,11 @@ class VehicleData:
     # Joined non-empty data-error fields (error_code/number/description),
     # sentinels "#0"/"0" filtered. Diagnostic.
     data_error_detail: str | None = None
+    # v4.7.11 (#1421 Scout) — EU-Data-Act "ErrorReason" leaf (single dict UUID
+    # b477dd84, type number, cluster "All Data"). The dict documents no enum, so
+    # we keep the RAW code string; "0"/"#0"/"0.0" are the no-error sentinels →
+    # None (same convention as charging_error_code). Diagnostic, off by default.
+    error_reason: str | None = None
     # Portal report/message id (change detector). Diagnostic.
     last_report_id: str | None = None
     # Climatisation energy consumed (kWh). TOTAL_INCREASING.

@@ -79,25 +79,62 @@ def test_bonnet_locked_polarity() -> None:
 
 def test_closures_secured_all_safe() -> None:
     d = _map({
-        "safe_state_front_engine_bonnet": "2",
-        "safe_state_front_left_door": "2",
-        "safe_state_tailgate": "2",
+        "safe_state_front_right_door": "2",
+        "safe_state_rear_left_door": "2",
+        "safe_state_rear_right_door": "2",
     })
     assert d.closures_secured is True
 
 
 def test_closures_secured_one_unsafe() -> None:
     d = _map({
-        "safe_state_front_left_door": "2",
+        "safe_state_front_right_door": "2",
         "safe_state_rear_right_door": "3",  # unsafe
     })
     assert d.closures_secured is False
 
 
 def test_closures_secured_ignores_unsupported() -> None:
-    # only 0/1 present → no determination
-    d = _map({"safe_state_front_left_door": "0", "safe_state_tailgate": "1"})
+    # only 0/1 present on the DOOR fields → no determination
+    d = _map({"safe_state_front_right_door": "0", "safe_state_rear_left_door": "1"})
     assert d.closures_secured is None
+
+
+def test_closures_secured_ignores_bonnet_and_tailgate() -> None:
+    # v4.7.11 (competing EU-Data-Act reader, issue #53): bonnet/tailgate document no safe(2), and a live
+    # SEAT/CUPRA delivery showed a CLOSED bonnet reporting safe_state=3. A closed
+    # bonnet/tailgate reporting "3" must NOT flip closures_secured to False while
+    # every door is safe.
+    d = _map({
+        "safe_state_front_right_door": "2",
+        "safe_state_rear_left_door": "2",
+        "safe_state_rear_right_door": "2",
+        "safe_state_front_engine_bonnet": "3",
+        "safe_state_tailgate": "3",
+    })
+    assert d.closures_secured is True
+
+
+def test_closures_secured_bonnet_tailgate_alone_no_determination() -> None:
+    # With only bonnet/tailgate present (dropped from the aggregate) and no door
+    # safe_state, there is no determination at all.
+    d = _map({
+        "safe_state_front_engine_bonnet": "2",
+        "safe_state_tailgate": "3",
+    })
+    assert d.closures_secured is None
+
+
+def test_closures_secured_dropped_leaves_consumed() -> None:
+    # v4.7.11: the two dropped leaves must still be consumed (read-and-discard)
+    # so the Scout does not re-report them as unmapped every poll.
+    d = _map({
+        "safe_state_front_engine_bonnet": "3",
+        "safe_state_tailgate": "3",
+    })
+    raw = d.raw_unmapped_fields or {}
+    assert "safe_state_front_engine_bonnet" not in raw
+    assert "safe_state_tailgate" not in raw
 
 
 def test_service_hatch_and_spoiler() -> None:

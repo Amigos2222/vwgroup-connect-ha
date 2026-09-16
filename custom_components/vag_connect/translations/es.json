@@ -259,6 +259,7 @@
           "keep_raw_datasets": "Conservar los conjuntos de datos brutos de EU Data Act (diagnóstico)",
           "auto_utility_meters": "Crear medidores mensuales automáticamente (energía cargada, kilometraje)",
           "test_cohort": "Ayuda a mejorar VW Group Connect (grupo de pruebas voluntario)",
+          "vwde_cred_relogin": "Volkswagen.de: volver a iniciar sesión con la contraseña guardada cuando caduque la sesión web",
           "vweu_device_grant": "Añadir VW EU bidireccional — comandos + lecturas en vivo (BETA)",
           "remove_vweu_twoway": "Eliminar VW EU bidireccional (volver al canal anterior)",
           "companion_read_vehicle_health": "Companion: leer cuentakilómetros y servicio desde el estado del vehículo (navega por la app)",
@@ -280,13 +281,14 @@
           "enable_push_fcm": "EXPERIMENTAL: solo CUPRA/SEAT. Habilita el push de Firebase Cloud Messaging en tiempo real desde el backend OLA (requiere el paquete de Python firebase-messaging, la misma importación diferida que la opción de MQTT de Skoda de la v1.18.0). Fase de base en la v1.19.0; la activación en vivo está pendiente de la validación de los probadores de la comunidad. Si el push no está disponible, la integración recurre silenciosamente al sondeo. Recarga la integración después de cambiar esta opción.",
           "enable_push_audi_vw": "EXPERIMENTAL: Audi/VW only. Enables real-time push notifications from Cariad FCM channel (same one myAudi/WeConnect mobile apps use — covers lock/unlock results, charging-state, climate, alarm). Requires firebase-messaging Python package (same as Skoda MQTT + CUPRA/SEAT FCM). Foundation phase in v1.23.0; live activation pending community-tester validation. If push is unavailable, the integration silently falls back to polling. Reload the integration after toggling.",
           "client_id_override": "Vía de escape para usuarios avanzados para cuando la comunidad detecta un nuevo client_id de OAuth en una nueva APK del Grupo VW antes de que nuestro generador de atlas diario lo capte. Pega aquí la cadena UUID@apps_vw-dilab_com completa y el resolutor la prueba PRIMERO en cada autenticación, con todos los client_id existentes aún en la cadena como respaldo. Déjalo vacío para el comportamiento predeterminado. Formato: 8-4-4-4-12 dígitos hexadecimales seguidos de @apps_vw-dilab_com. Los valores mal formados se ignoran silenciosamente.",
-          "eu_data_act_auto_kickoff": "Solo tiene sentido cuando la integración funciona en modo de portal de solo lectura del EU Data Act (las estrategias de BFF en vivo han fallado). Cuando está ACTIVADO, el coordinador comprueba si hay una Custom Data Request de 15 min activa por VIN al iniciar y crea una cuando no existe ninguna. El inicio implica una suscripción de datos de 1 mes en tu cuenta del portal, por lo que es opcional. El portal acepta COMO MÁXIMO UNA solicitud personalizada activa por VIN a la vez. Desactivado de forma predeterminada.",
+          "eu_data_act_auto_kickoff": "Solo tiene sentido cuando la integración funciona en modo de portal de solo lectura del EU Data Act (las estrategias de BFF en vivo han fallado). Cuando está ACTIVADO, el coordinador comprueba si hay una Custom Data Request de 15 min activa por VIN al iniciar y crea una cuando no existe ninguna. El inicio implica una suscripción de datos de 1 mes en tu cuenta del portal, por lo que puedes desactivarlo aquí. El portal acepta COMO MÁXIMO UNA solicitud personalizada activa por VIN a la vez. Activado de forma predeterminada; desactívalo solo si prefieres gestionar la solicitud tú mismo en el portal.",
           "abrp_enable": "Enviar telemetría en vivo a A Better Routeplanner. Requiere una api_key y un token por vehículo. Desactivado = sin llamadas salientes.",
           "abrp_api_key": "Una clave de desarrollador/socio que registras en iternio (no incluimos ninguna). Identifica la integración. Nunca se registra.",
           "abrp_user_token": "El token 'Generic' de la app ABRP: Ajustes -> tu coche -> Live Data. Nunca se registra.",
           "keep_raw_datasets": "Solo es útil en el canal del portal EU Data Act. Cuando está activado, los últimos archivos ZIP de datos brutos que entrega el portal se guardan en el disco (en .storage, por vehículo y con un límite de tamaño) para poder reproducir un valor incorrecto o ausente a partir de los bytes exactos que envió tu coche. Estos archivos contienen tu ubicación GPS, el VIN y la telemetría, por lo que está desactivado de forma predeterminada; actívalo solo mientras diagnosticas un problema.",
           "auto_utility_meters": "Desactivado de forma predeterminada. Cuando está activado, la integración crea ayudantes utility_meter de Home Assistant que suman tu energía cargada y tu kilometraje por mes natural, uno por vehículo. El interruptor solo aparece cuando ya existe un sensor de origen compatible. Son ayudantes permanentes: volver a desactivarlo evita que se creen nuevos, pero no elimina los ya creados; elimínalos en Ajustes → Dispositivos y servicios → Ayudantes.",
           "test_cohort": "Desactivado de forma predeterminada. Actívalo para permitir que la integración pruebe lecturas experimentales en tu coche —como el intento en curso de recuperar la ubicación GPS de los Volkswagen de la UE— y para que, de vez en cuando, te muestre una notificación que puedes descartar pidiéndote que compartas un archivo de diagnóstico con el que confirmar una nueva función para tu modelo. Todo lo que compartes se anonimiza automáticamente antes de salir de tu sistema: nunca se incluye el VIN, el GPS, tokens ni tu correo electrónico. Así es como se desbloquean nuevas funciones para tu coche y para todos los que conducen el mismo modelo, y puedes volver a desactivarlo cuando quieras.",
+          "vwde_cred_relogin": "Desactivado de forma predeterminada. Solo afecta al canal de lectura de Volkswagen.de. Cuando la reanudación silenciosa de la sesión falla, la integración vuelve a iniciar sesión con la contraseña que ya guardaste en lugar de pedirte que vuelvas a añadir el canal. Esto puede hacer que Volkswagen envíe como máximo un código por correo electrónico cada 15 minutos; si se requiere un código, no se puede introducir automáticamente, por lo que se te pedirá que vuelvas a añadir el canal.",
           "vweu_device_grant": "Solo Volkswagen, BETA. Añade control bidireccional (bloqueo/desbloqueo, climatización, carga) y lecturas CARIAD en vivo iniciando sesión con tu Volkswagen ID. Aquí Volkswagen solo emite un token de 1 hora, así que tu contraseña se almacena para renovarlo automáticamente — solo se envía al propio servidor de inicio de sesión de Volkswagen y nunca se escribe en los registros ni en los diagnósticos. Si prefieres no almacenar una contraseña, usa los canales de solo lectura en su lugar. Al marcar esta casilla se abre el paso de inicio de sesión."
         }
       },
@@ -928,6 +930,9 @@
       "data_error_detail": {
         "name": "Error de datos"
       },
+      "error_reason": {
+        "name": "Código de motivo de error"
+      },
       "external_power_supply_state": {
         "name": "Suministro externo"
       },
@@ -1474,6 +1479,9 @@
       },
       "short_term_avg_fuel_consumption_l_100km": {
         "name": "Consumo medio de combustible (corto plazo)"
+      },
+      "heading": {
+        "name": "Rumbo"
       },
       "battery_soc_charge_report": {
         "name": "Nivel de batería (último informe de carga)"
@@ -2394,61 +2402,61 @@
   "triggers": {
     "started_charging": {
       "name": "El vehículo empezó a cargar",
-      "description": "Se activa cuando un vehículo empieza a cargar."
+      "description": "Se activa cuando un vehículo empieza a cargar. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "stopped_charging": {
       "name": "El vehículo dejó de cargar",
-      "description": "Se activa cuando un vehículo deja de cargar."
+      "description": "Se activa cuando un vehículo deja de cargar. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "plugged_in": {
       "name": "Vehículo conectado",
-      "description": "Se activa cuando se conecta el cable de carga de un vehículo."
+      "description": "Se activa cuando se conecta el cable de carga de un vehículo. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "unplugged": {
       "name": "Vehículo desconectado",
-      "description": "Se activa cuando se desconecta el cable de carga de un vehículo."
+      "description": "Se activa cuando se desconecta el cable de carga de un vehículo. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "locked": {
       "name": "Vehículo bloqueado",
-      "description": "Se activa cuando un vehículo se bloquea."
+      "description": "Se activa cuando un vehículo se bloquea. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "unlocked": {
       "name": "Vehículo desbloqueado",
-      "description": "Se activa cuando un vehículo se desbloquea."
+      "description": "Se activa cuando un vehículo se desbloquea. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "started_preconditioning": {
       "name": "El vehículo inició el preacondicionamiento",
-      "description": "Se activa cuando un vehículo inicia el preacondicionamiento de la climatización."
+      "description": "Se activa cuando un vehículo inicia el preacondicionamiento de la climatización. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "stopped_preconditioning": {
       "name": "El vehículo detuvo el preacondicionamiento",
-      "description": "Se activa cuando un vehículo detiene el preacondicionamiento de la climatización."
+      "description": "Se activa cuando un vehículo detiene el preacondicionamiento de la climatización. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "charge_target_reached": {
       "name": "El vehículo alcanzó su objetivo de carga",
-      "description": "Se activa cuando el nivel de carga de un vehículo alcanza su objetivo."
+      "description": "Se activa cuando el nivel de carga de un vehículo alcanza su objetivo. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     }
   },
   "conditions": {
     "is_charging": {
       "name": "Un vehículo está cargando",
-      "description": "Comprueba si algún vehículo está cargando en este momento."
+      "description": "Comprueba si algún vehículo está cargando en este momento. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "is_plugged_in": {
       "name": "Un vehículo está conectado",
-      "description": "Comprueba si el cable de carga de algún vehículo está conectado."
+      "description": "Comprueba si el cable de carga de algún vehículo está conectado. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "is_locked": {
       "name": "Un vehículo está bloqueado",
-      "description": "Comprueba si algún vehículo está bloqueado."
+      "description": "Comprueba si algún vehículo está bloqueado. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "is_preconditioning": {
       "name": "Un vehículo está preacondicionando",
-      "description": "Comprueba si algún vehículo está ejecutando el preacondicionamiento de la climatización."
+      "description": "Comprueba si algún vehículo está ejecutando el preacondicionamiento de la climatización. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     },
     "is_charge_target_reached": {
       "name": "Un vehículo alcanzó su objetivo de carga",
-      "description": "Comprueba si el nivel de carga de algún vehículo está en su objetivo o por encima."
+      "description": "Comprueba si el nivel de carga de algún vehículo está en su objetivo o por encima. Opcionalmente, limita a un vehículo con la opción vin o un dispositivo de destino."
     }
   }
 }

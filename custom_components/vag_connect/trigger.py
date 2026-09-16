@@ -21,11 +21,63 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import voluptuous as vol
+from homeassistant.const import CONF_DEVICE_ID
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN
 from .trigger_detect import EVENT_KEYS
+
+# ``CONF_OPTIONS`` only exists in homeassistant.const on newer cores; the
+# key itself is stable ("options"), so define it locally (CI runs older HA).
+CONF_OPTIONS = "options"
+
+# v4.7.11 (trigger-vin-targeting) — optional per-vehicle scoping. Our own
+# trigger.py docstring flagged "per-device targeting is a future enhancement"; on
+# a multi-car account v1 fired for EVERY vehicle, forcing a {{ trigger.vin }}
+# template filter in the action. This adds an OPTIONAL ``vin`` option (and the
+# standard ``target:`` device selector) so the platform subscribes only for the
+# wanted VIN(s). Unset ⇒ v1 account-wide behaviour, byte-identical.
+#
+# ``vin`` lives under ``options`` and ``device_id`` under the generic ``target``
+# because that is how HA splits a named-trigger's config (see
+# homeassistant.helpers.trigger.TriggerConfig: key/target/options). VINs are 17
+# uppercase alphanumerics (ISO 3779); the coordinator stores them upper-cased, so
+# we ``vol.Upper``-normalise the input to match. ``extra=ALLOW_EXTRA`` keeps the
+# schema additive if a future option is added.
+CONF_VIN = "vin"
+_VIN = vol.All(cv.string, vol.Upper, vol.Match(r"^[A-Z0-9]{17}$"))
+_OPTIONS_SCHEMA = vol.Schema({vol.Optional(CONF_VIN): _VIN}, extra=vol.ALLOW_EXTRA)
+
+
+def _resolve_target_vins(hass: HomeAssistant, config: Any) -> set[str]:
+    """VINs this trigger/condition config is scoped to — empty ⇒ all vehicles.
+
+    Reads ``options.vin`` and resolves each ``target.device_id`` to its VIN via
+    the device registry (vehicle devices carry ``identifiers={(DOMAIN, vin)}``;
+    the per-entry settings device uses ``<entry_id>_settings`` — skipped).
+    Defensive against the experimental config shape: attributes are read with
+    ``getattr`` so a differently-shaped config degrades to "all vehicles".
+    """
+    vins: set[str] = set()
+    options = getattr(config, "options", None) or {}
+    vin = options.get(CONF_VIN)
+    if vin:
+        vins.add(str(vin))
+    target = getattr(config, "target", None) or {}
+    device_ids = target.get(CONF_DEVICE_ID) or []  # cv.TARGET_FIELDS ⇒ a list
+    if device_ids:
+        registry = dr.async_get(hass)
+        for device_id in device_ids:
+            device = registry.async_get(device_id)
+            if device is None:
+                continue
+            for domain, ident in device.identifiers:
+                if domain == DOMAIN and not str(ident).endswith("_settings"):
+                    vins.add(str(ident))
+    return vins
 
 # The named-trigger platform only exists on HA 2026.7+ (and is upstream-flagged
 # "may change without a deprecation notice"). Import it defensively so the module
@@ -67,11 +119,19 @@ class _VagVehicleTrigger(Trigger):
     async def async_validate_config(
         cls, hass: HomeAssistant, config: ConfigType
     ) -> ConfigType:
+        # config is the {options, target} subset; target is already TARGET_FIELDS-
+        # validated by the base. v4.7.11: validate/normalise the optional vin.
+        options = config.get(CONF_OPTIONS)
+        if options:
+            return {**config, CONF_OPTIONS: _OPTIONS_SCHEMA(options)}
         return config
 
     def __init__(self, hass: HomeAssistant, config: Any) -> None:
         super().__init__(hass, config)
         self._hass = hass
+        # v4.7.11 — the base Trigger.__init__ stores only _hass; keep the
+        # TriggerConfig (key/target/options) so async_attach_runner can scope by VIN.
+        self._config = config
 
     async def async_attach_runner(
         self,
@@ -85,9 +145,15 @@ class _VagVehicleTrigger(Trigger):
         def _on_transition(payload: dict[str, Any]) -> None:
             run_action(payload, f"vehicle {payload.get('event', event_key)}")
 
+        # v4.7.11 (trigger-vin-targeting) — when the config scopes to one or more
+        # VINs, subscribe once per VIN (the detector filters per edge); unset ⇒
+        # register with vin=None, the byte-identical v1 account-wide behaviour.
+        target_vins = _resolve_target_vins(self._hass, self._config)
+        vins: tuple[str | None, ...] = tuple(target_vins) or (None,)
         unsubs = [
-            coord.register_transition_listener(event_key, None, _on_transition)
+            coord.register_transition_listener(event_key, vin, _on_transition)
             for coord in _coordinators(self._hass)
+            for vin in vins
         ]
 
         @callback

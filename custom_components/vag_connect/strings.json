@@ -260,6 +260,7 @@
           "keep_raw_datasets": "Keep raw EU Data Act datasets (diagnostics)",
           "auto_utility_meters": "Auto-create monthly meters (charged energy, mileage)",
           "test_cohort": "Help improve VW Group Connect (opt-in test cohort)",
+          "vwde_cred_relogin": "Volkswagen.de: re-login with your stored password when the web session dies",
           "remove_vweu_twoway": "Remove VW EU Two-Way (revert to the previous channel)",
           "companion_read_vehicle_health": "Companion: read odometer and service from Vehicle Health (navigates the app)",
           "companion_read_climate_detail": "Companion: read target and outside temperature (navigates the app)",
@@ -280,14 +281,15 @@
           "enable_push_fcm": "EXPERIMENTAL: CUPRA/SEAT only. Enables real-time Firebase Cloud Messaging push from OLA backend (requires firebase-messaging Python package — same lazy-import as v1.18.0 Skoda MQTT toggle). Foundation phase in v1.19.0; live activation pending community-tester validation. If push is unavailable, the integration silently falls back to polling. Reload the integration after toggling.",
           "enable_push_audi_vw": "Live (beta): Audi/VW only. Enables real-time push notifications from the Cariad FCM channel (same one myAudi/WeConnect mobile apps use, covers lock/unlock results, charging-state, climate, alarm). Decoded events are fired onto the Home Assistant event bus as ``vag_connect_push_event`` and trigger a coordinator refresh. Requires firebase-messaging Python package (same lazy-import as Skoda MQTT + CUPRA/SEAT FCM). Live activation since v2.8.0 (Action #4); the credential resolver is still tester-gated until task #40 follow-up lands the Cariad Firebase sender_id. If push is unavailable, the integration silently falls back to polling. Reload the integration after toggling.",
           "client_id_override": "Power-user escape hatch for when the community spots a fresh OAuth client_id in a new VW Group APK before our daily atlas builder catches it. Paste the full UUID@apps_vw-dilab_com string here and the resolver tries it FIRST on every authenticate, with all the existing client_ids still in the chain as fallback. Leave empty for default behaviour. Format: 8-4-4-4-12 hex digits followed by @apps_vw-dilab_com. Malformed values are silently ignored.",
-          "eu_data_act_auto_kickoff": "Only meaningful when the integration is operating in read-only EU Data Act portal mode (live BFF strategies have failed). When ON, the coordinator checks for an active 15-min Custom Data Request per VIN at startup and creates one when none exists. The kickoff implies a 1-month data subscription on your account at the portal, so this is opt-in. The portal accepts AT MOST ONE active custom request per VIN at a time. Off by default.",
+          "eu_data_act_auto_kickoff": "Only meaningful when the integration is operating in read-only EU Data Act portal mode (live BFF strategies have failed). When ON, the coordinator checks for an active 15-min Custom Data Request per VIN at startup and creates one when none exists. The kickoff implies a 1-month data subscription on your account at the portal, so you can switch it off here. The portal accepts AT MOST ONE active custom request per VIN at a time. On by default — switch it off only if you'd rather manage the request yourself on the portal.",
           "abrp_enable": "Send live telemetry to A Better Routeplanner. Needs both an api_key and a per-vehicle token below. Off = no outbound calls.",
           "abrp_api_key": "A developer/partner key you register with iternio (we don't ship one). Identifies the integration. Never logged.",
           "abrp_user_token": "The 'Generic' token from the ABRP app: Settings -> your car -> Live Data. Never logged.",
           "vweu_device_grant": "Volkswagen only, BETA. Adds two-way control (lock/unlock, climate, charging) and live CARIAD reads by signing in with your Volkswagen ID. Volkswagen only issues a 1-hour token here, so your password is stored to renew it automatically — it is sent only to Volkswagen's own login server and is never written to logs or diagnostics. If you would rather not store a password, use the read-only channels instead. Ticking this opens the sign-in step.",
           "keep_raw_datasets": "Only useful on the EU Data Act portal channel. When on, the last few raw dataset ZIPs the portal delivers are kept on disk (under .storage, per vehicle and size-capped) so a wrong or missing value can be reproduced from the exact bytes your car sent. These files contain your GPS, VIN and telemetry, so it is off by default; turn it on only while troubleshooting.",
           "auto_utility_meters": "Off by default. When on, the integration creates Home Assistant utility_meter helpers that total your charged energy and mileage per calendar month, one per vehicle. The toggle only appears when a matching source sensor already exists. These are permanent helpers: switching this back off stops new ones being created but does not delete the ones already made — remove those under Settings → Devices & Services → Helpers.",
-          "test_cohort": "Off by default. Turn this on to let the integration try experimental reads on your car — such as the ongoing attempt to recover GPS location for Volkswagen EU cars — and occasionally show a dismissible notification asking you to share a diagnostics file so a new capability can be confirmed for your model. Everything shared is redacted automatically before it leaves your system: no VIN, GPS, tokens or email is ever included. It is how new features get unlocked for your car and everyone driving the same model, and you can switch it off again at any time."
+          "test_cohort": "Off by default. Turn this on to let the integration try experimental reads on your car — such as the ongoing attempt to recover GPS location for Volkswagen EU cars — and occasionally show a dismissible notification asking you to share a diagnostics file so a new capability can be confirmed for your model. Everything shared is redacted automatically before it leaves your system: no VIN, GPS, tokens or email is ever included. It is how new features get unlocked for your car and everyone driving the same model, and you can switch it off again at any time.",
+          "vwde_cred_relogin": "Off by default. Only affects the Volkswagen.de read channel. When the silent session resume fails, the integration signs back in with the password you already stored instead of asking you to re-add the channel. This can make Volkswagen send at most one email code every 15 minutes; if a code is required it cannot be entered automatically, so you will be asked to re-add the channel."
         }
       },
       "add_vwde": {
@@ -961,6 +963,9 @@
       "data_error_detail": {
         "name": "Data error"
       },
+      "error_reason": {
+        "name": "Error Reason Code"
+      },
       "external_power_supply_state": {
         "name": "External power supply"
       },
@@ -1507,6 +1512,9 @@
       },
       "short_term_avg_fuel_consumption_l_100km": {
         "name": "Short Term Average Fuel Consumption"
+      },
+      "heading": {
+        "name": "Heading"
       },
       "battery_soc_charge_report": {
         "name": "Battery Level at Last Charge Report"
@@ -2394,61 +2402,61 @@
   "triggers": {
     "started_charging": {
       "name": "Vehicle started charging",
-      "description": "Triggers when a vehicle starts charging."
+      "description": "Triggers when a vehicle starts charging. Optionally scope to one vehicle with the vin option or a target device."
     },
     "stopped_charging": {
       "name": "Vehicle stopped charging",
-      "description": "Triggers when a vehicle stops charging."
+      "description": "Triggers when a vehicle stops charging. Optionally scope to one vehicle with the vin option or a target device."
     },
     "plugged_in": {
       "name": "Vehicle plugged in",
-      "description": "Triggers when a vehicle's charging cable is connected."
+      "description": "Triggers when a vehicle's charging cable is connected. Optionally scope to one vehicle with the vin option or a target device."
     },
     "unplugged": {
       "name": "Vehicle unplugged",
-      "description": "Triggers when a vehicle's charging cable is disconnected."
+      "description": "Triggers when a vehicle's charging cable is disconnected. Optionally scope to one vehicle with the vin option or a target device."
     },
     "locked": {
       "name": "Vehicle locked",
-      "description": "Triggers when a vehicle becomes locked."
+      "description": "Triggers when a vehicle becomes locked. Optionally scope to one vehicle with the vin option or a target device."
     },
     "unlocked": {
       "name": "Vehicle unlocked",
-      "description": "Triggers when a vehicle becomes unlocked."
+      "description": "Triggers when a vehicle becomes unlocked. Optionally scope to one vehicle with the vin option or a target device."
     },
     "started_preconditioning": {
       "name": "Vehicle started preconditioning",
-      "description": "Triggers when a vehicle starts climate preconditioning."
+      "description": "Triggers when a vehicle starts climate preconditioning. Optionally scope to one vehicle with the vin option or a target device."
     },
     "stopped_preconditioning": {
       "name": "Vehicle stopped preconditioning",
-      "description": "Triggers when a vehicle stops climate preconditioning."
+      "description": "Triggers when a vehicle stops climate preconditioning. Optionally scope to one vehicle with the vin option or a target device."
     },
     "charge_target_reached": {
       "name": "Vehicle reached its charge target",
-      "description": "Triggers when a vehicle's charge level reaches its target."
+      "description": "Triggers when a vehicle's charge level reaches its target. Optionally scope to one vehicle with the vin option or a target device."
     }
   },
   "conditions": {
     "is_charging": {
       "name": "A vehicle is charging",
-      "description": "Tests whether any vehicle is currently charging."
+      "description": "Tests whether any vehicle is currently charging. Optionally scope to one vehicle with the vin option or a target device."
     },
     "is_plugged_in": {
       "name": "A vehicle is plugged in",
-      "description": "Tests whether any vehicle's charging cable is connected."
+      "description": "Tests whether any vehicle's charging cable is connected. Optionally scope to one vehicle with the vin option or a target device."
     },
     "is_locked": {
       "name": "A vehicle is locked",
-      "description": "Tests whether any vehicle is locked."
+      "description": "Tests whether any vehicle is locked. Optionally scope to one vehicle with the vin option or a target device."
     },
     "is_preconditioning": {
       "name": "A vehicle is preconditioning",
-      "description": "Tests whether any vehicle is running climate preconditioning."
+      "description": "Tests whether any vehicle is running climate preconditioning. Optionally scope to one vehicle with the vin option or a target device."
     },
     "is_charge_target_reached": {
       "name": "A vehicle reached its charge target",
-      "description": "Tests whether any vehicle's charge level is at or above its target."
+      "description": "Tests whether any vehicle's charge level is at or above its target. Optionally scope to one vehicle with the vin option or a target device."
     }
   }
 }

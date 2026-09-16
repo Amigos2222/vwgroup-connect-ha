@@ -259,6 +259,7 @@
           "keep_raw_datasets": "Behåll rå EU Data Act-datauppsättningar (diagnostik)",
           "auto_utility_meters": "Skapa månadsmätare automatiskt (laddad energi, körsträcka)",
           "test_cohort": "Hjälp till att förbättra VW Group Connect (frivillig testgrupp)",
+          "vwde_cred_relogin": "Volkswagen.de: logga in igen med det sparade lösenordet när webbsessionen upphör",
           "vweu_device_grant": "Lägg till VW EU Two-Way — kommandon + live-avläsningar (BETA)",
           "remove_vweu_twoway": "Ta bort VW EU Two-Way (återgå till föregående kanal)",
           "companion_read_vehicle_health": "Companion: läs mätarställning och service från fordonsstatus (navigerar i appen)",
@@ -280,13 +281,14 @@
           "enable_push_fcm": "EXPERIMENTELLT: Endast CUPRA/SEAT. Aktiverar Firebase Cloud Messaging-push i realtid från OLA-backend (kräver Python-paketet firebase-messaging — samma lazy-import som Skoda MQTT-växlingen i v1.18.0). Grundläggningsfas i v1.19.0; live-aktivering väntar på validering av community-testare. Om push inte är tillgängligt faller integrationen tyst tillbaka till pollning. Ladda om integrationen efter att du växlat inställningen.",
           "enable_push_audi_vw": "EXPERIMENTAL: Audi/VW only. Enables real-time push notifications from Cariad FCM channel (same one myAudi/WeConnect mobile apps use — covers lock/unlock results, charging-state, climate, alarm). Requires firebase-messaging Python package (same as Skoda MQTT + CUPRA/SEAT FCM). Foundation phase in v1.23.0; live activation pending community-tester validation. If push is unavailable, the integration silently falls back to polling. Reload the integration after toggling.",
           "client_id_override": "Nödutgång för avancerade användare för när communityn upptäcker ett nytt OAuth client_id i en ny VW Group-APK innan vår dagliga atlas-byggare fångar det. Klistra in hela strängen UUID@apps_vw-dilab_com här, så provar resolvern det FÖRST vid varje autentisering, med alla befintliga client_id:n kvar i kedjan som reserv. Lämna tomt för standardbeteende. Format: 8-4-4-4-12 hexadecimala siffror följt av @apps_vw-dilab_com. Felaktiga värden ignoreras tyst.",
-          "eu_data_act_auto_kickoff": "Endast meningsfullt när integrationen körs i skrivskyddat EU Data Act-portalläge (live-BFF-strategier har misslyckats). När den är PÅ kontrollerar koordinatorn vid start om det finns en aktiv 15-minuters Custom Data Request per VIN och skapar en om ingen finns. Igångsättningen innebär en 1-månads dataprenumeration på ditt konto i portalen, så detta är opt-in. Portalen accepterar HÖGST EN aktiv anpassad begäran per VIN åt gången. Av som standard.",
+          "eu_data_act_auto_kickoff": "Endast meningsfullt när integrationen körs i skrivskyddat EU Data Act-portalläge (live-BFF-strategier har misslyckats). När den är PÅ kontrollerar koordinatorn vid start om det finns en aktiv 15-minuters Custom Data Request per VIN och skapar en om ingen finns. Igångsättningen innebär en 1-månads dataprenumeration på ditt konto i portalen, så du kan stänga av det här. Portalen accepterar HÖGST EN aktiv anpassad begäran per VIN åt gången. På som standard — stäng bara av det om du hellre hanterar begäran själv i portalen.",
           "abrp_enable": "Skicka livetelemetri till A Better Routeplanner. Kräver en api_key och en token per fordon. Av = inga utgående anrop.",
           "abrp_api_key": "En utvecklar-/partnernyckel som du registrerar hos iternio (vi levererar ingen). Identifierar integrationen. Loggas aldrig.",
           "abrp_user_token": "'Generic'-token från ABRP-appen: Inställningar -> din bil -> Live Data. Loggas aldrig.",
           "keep_raw_datasets": "Endast användbart på EU Data Act-portalkanalen. När det är på sparas de senaste råa dataset-ZIP-filerna som portalen levererar på disken (under .storage, per fordon och med en storleksgräns), så att ett felaktigt eller saknat värde kan återskapas från exakt de byte som din bil skickade. Dessa filer innehåller din GPS-position, VIN och telemetri, så det är avstängt som standard – slå bara på det vid felsökning.",
           "auto_utility_meters": "Av som standard. När det är på skapar integrationen Home Assistant utility_meter-hjälpare som summerar din laddade energi och körsträcka per kalendermånad, en per fordon. Reglaget visas bara när en matchande källsensor redan finns. Det här är permanenta hjälpare: att stänga av det igen stoppar att nya skapas men tar inte bort de som redan skapats – ta bort dem under Inställningar → Enheter och tjänster → Hjälpare.",
           "test_cohort": "Avstängt som standard. Slå på det här så får integrationen prova experimentella avläsningar från din bil — till exempel det pågående försöket att få fram GPS-position för Volkswagen-bilar i EU — och då och då visa en avisering, som du enkelt kan stänga, där du ombeds dela en diagnostikfil så att en ny funktion kan bekräftas för just din modell. Allt som delas rensas automatiskt innan det lämnar ditt system: inget VIN, ingen GPS, inga tokens och ingen e-post skickas någonsin med. Det är så nya funktioner låses upp — för din bil och för alla andra som kör samma modell — och du kan stänga av det igen när du vill.",
+          "vwde_cred_relogin": "Av som standard. Påverkar bara Volkswagen.de-läskanalen. När den tysta återupptagningen av sessionen misslyckas loggar integrationen in igen med lösenordet du redan har sparat i stället för att be dig lägga till kanalen på nytt. Det kan få Volkswagen att skicka högst en e-postkod var 15:e minut; om en kod krävs kan den inte anges automatiskt, och du blir ombedd att lägga till kanalen på nytt.",
           "vweu_device_grant": "Endast Volkswagen, BETA. Lägger till tvåvägsstyrning (lås/lås upp, klimat, laddning) och live-CARIAD-avläsningar genom att du loggar in med ditt Volkswagen ID. Volkswagen utfärdar bara en 1-timmestoken här, så ditt lösenord lagras för att förnya den automatiskt — det skickas endast till Volkswagens egen inloggningsserver och skrivs aldrig till loggar eller diagnostik. Om du hellre inte vill lagra ett lösenord, använd de skrivskyddade kanalerna istället. Om du kryssar i detta öppnas inloggningssteget."
         }
       },
@@ -928,6 +930,9 @@
       "data_error_detail": {
         "name": "Datafel"
       },
+      "error_reason": {
+        "name": "Felorsakskod"
+      },
       "external_power_supply_state": {
         "name": "Extern strömförsörjning"
       },
@@ -1474,6 +1479,9 @@
       },
       "short_term_avg_fuel_consumption_l_100km": {
         "name": "Genomsnittlig bränsleförbrukning (kort sikt)"
+      },
+      "heading": {
+        "name": "Färdriktning"
       },
       "battery_soc_charge_report": {
         "name": "Batterinivå (senaste laddrapport)"
@@ -2394,61 +2402,61 @@
   "triggers": {
     "started_charging": {
       "name": "Fordonet började ladda",
-      "description": "Utlöses när ett fordon börjar ladda."
+      "description": "Utlöses när ett fordon börjar ladda. Kan valfritt begränsas till ett fordon med vin-alternativet eller en målenhet."
     },
     "stopped_charging": {
       "name": "Fordonet slutade ladda",
-      "description": "Utlöses när ett fordon slutar ladda."
+      "description": "Utlöses när ett fordon slutar ladda. Kan valfritt begränsas till ett fordon med vin-alternativet eller en målenhet."
     },
     "plugged_in": {
       "name": "Fordon anslutet",
-      "description": "Utlöses när ett fordons laddkabel ansluts."
+      "description": "Utlöses när ett fordons laddkabel ansluts. Kan valfritt begränsas till ett fordon med vin-alternativet eller en målenhet."
     },
     "unplugged": {
       "name": "Fordon frånkopplat",
-      "description": "Utlöses när ett fordons laddkabel kopplas från."
+      "description": "Utlöses när ett fordons laddkabel kopplas från. Kan valfritt begränsas till ett fordon med vin-alternativet eller en målenhet."
     },
     "locked": {
       "name": "Fordon låst",
-      "description": "Utlöses när ett fordon låses."
+      "description": "Utlöses när ett fordon låses. Kan valfritt begränsas till ett fordon med vin-alternativet eller en målenhet."
     },
     "unlocked": {
       "name": "Fordon upplåst",
-      "description": "Utlöses när ett fordon låses upp."
+      "description": "Utlöses när ett fordon låses upp. Kan valfritt begränsas till ett fordon med vin-alternativet eller en målenhet."
     },
     "started_preconditioning": {
       "name": "Fordonet startade förkonditionering",
-      "description": "Utlöses när ett fordon startar klimatförkonditionering."
+      "description": "Utlöses när ett fordon startar klimatförkonditionering. Kan valfritt begränsas till ett fordon med vin-alternativet eller en målenhet."
     },
     "stopped_preconditioning": {
       "name": "Fordonet stoppade förkonditionering",
-      "description": "Utlöses när ett fordon stoppar klimatförkonditionering."
+      "description": "Utlöses när ett fordon stoppar klimatförkonditionering. Kan valfritt begränsas till ett fordon med vin-alternativet eller en målenhet."
     },
     "charge_target_reached": {
       "name": "Fordonet nådde sitt laddmål",
-      "description": "Utlöses när ett fordons laddnivå når sitt mål."
+      "description": "Utlöses när ett fordons laddnivå når sitt mål. Kan valfritt begränsas till ett fordon med vin-alternativet eller en målenhet."
     }
   },
   "conditions": {
     "is_charging": {
       "name": "Ett fordon laddar",
-      "description": "Testar om något fordon laddar just nu."
+      "description": "Testar om något fordon laddar just nu. Kan valfritt begränsas till ett fordon med vin-alternativet eller en målenhet."
     },
     "is_plugged_in": {
       "name": "Ett fordon är anslutet",
-      "description": "Testar om något fordons laddkabel är ansluten."
+      "description": "Testar om något fordons laddkabel är ansluten. Kan valfritt begränsas till ett fordon med vin-alternativet eller en målenhet."
     },
     "is_locked": {
       "name": "Ett fordon är låst",
-      "description": "Testar om något fordon är låst."
+      "description": "Testar om något fordon är låst. Kan valfritt begränsas till ett fordon med vin-alternativet eller en målenhet."
     },
     "is_preconditioning": {
       "name": "Ett fordon förkonditionerar",
-      "description": "Testar om något fordon kör klimatförkonditionering."
+      "description": "Testar om något fordon kör klimatförkonditionering. Kan valfritt begränsas till ett fordon med vin-alternativet eller en målenhet."
     },
     "is_charge_target_reached": {
       "name": "Ett fordon nådde sitt laddmål",
-      "description": "Testar om något fordons laddnivå är på eller över sitt mål."
+      "description": "Testar om något fordons laddnivå är på eller över sitt mål. Kan valfritt begränsas till ett fordon med vin-alternativet eller en målenhet."
     }
   }
 }
