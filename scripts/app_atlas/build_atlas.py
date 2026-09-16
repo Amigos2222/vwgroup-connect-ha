@@ -14,6 +14,11 @@ What this does (Phase A.1):
 5. Updates docs/research/app-atlas/_summary.md (cross-brand matrix)
 6. Updates .app-atlas-cache.json with the new state
 
+Hand-written findings go in scripts/app_atlas/notes/{brand}.{section}.md
+(section = flavors | cross-version-diff | action-items) and are folded into
+the generated page — writing them into the page itself would be erased by
+the next daily run.
+
 Phase A.2 will add: APK download via APKMirror direct CDN + apktool
 extraction + grep for OLA headers + endpoint discovery.
 
@@ -49,6 +54,7 @@ _CONFIG_PATH    = _REPO_ROOT / "scripts" / "app_atlas" / "config.json"
 _ATLAS_DIR      = _REPO_ROOT / "docs" / "research" / "app-atlas"
 _CACHE_PATH     = _REPO_ROOT / ".app-atlas-cache.json"
 _APK_CACHE_DIR  = _REPO_ROOT / ".app-atlas-apk-cache"   # NEW v Phase A.2
+_NOTES_DIR      = _REPO_ROOT / "scripts" / "app_atlas" / "notes"
 _SUMMARY_PATH   = _ATLAS_DIR / "_summary.md"
 
 # ── HTTP ────────────────────────────────────────────────────────────
@@ -96,6 +102,22 @@ _APKCOMBO_VERSION_REGEXES = [
     re.compile(r'\b(\d+\.\d+\.\d+(?:[-.]\w+)?)\s*-\s*Updated:', re.IGNORECASE),
     # Fallback: any `<a>...3.61.0</a>` style link.
     re.compile(r'>(\d+\.\d+\.\d+(?:[-.]\w+)?)<\s*/\s*a\s*>', re.IGNORECASE),
+    # The page's own meta description: "Download My Porsche APK 20.26.36-row+186611
+    # - 129 MB - Updated: 2026-09 - …". Neither pattern above survives the size
+    # and date that sit between the version and " - Updated:", so APKCombo had
+    # quietly stopped answering for every brand — a fallback that matches nothing
+    # still counts as "configured", which is how it went unnoticed.
+    #
+    # Only the dotted numeric part is captured. APKCombo publishes the full build
+    # string (`20.26.36-row+186611`, `20.26.37-pcna+188460`), and keeping the
+    # flavour suffix would make the value unparseable for is_downgrade() — the
+    # brand could then be walked backwards by a stale listing with no guard
+    # firing. Stripped, a stale mirror is caught and reported instead.
+    re.compile(
+        r'<meta\s+name="description"\s+content="[^"]*?\bAPK\s+'
+        r'(\d+(?:\.\d+){1,3})(?:[-+][\w.+]*)?\s',
+        re.IGNORECASE,
+    ),
 ]
 
 
@@ -381,6 +403,73 @@ def _render_apk_section(findings: dict[str, Any] | None) -> str:
     return "\n".join(parts)
 
 
+# ── Curated notes ───────────────────────────────────────────────────
+# Every brand page is rewritten from scratch on each run, so anything
+# typed straight into docs/research/app-atlas/{brand}.md survives exactly
+# until the next daily poll and is then gone without a trace. Hand-written
+# analysis therefore lives beside the config, in
+# scripts/app_atlas/notes/{brand}.{section}.md, and the emitter folds it
+# back in — the generated page stays generated, and the findings stay.
+
+_NOTE_SECTIONS = ("flavors", "cross-version-diff", "action-items")
+
+
+def _load_note(brand: str, section: str) -> str | None:
+    """Curated markdown for one section of one brand's page, or None.
+
+    ``section`` is one of ``_NOTE_SECTIONS``. A whitespace-only file counts
+    as absent, so emptying a note falls back to the generated placeholder
+    rather than punching a blank hole into the page.
+    """
+    p = _NOTES_DIR / f"{brand}.{section}.md"
+    if not p.exists():
+        return None
+    try:
+        body = p.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        _LOGGER.warning("Brand %s: could not read note %s — %s", brand, p.name, exc)
+        return None
+    return body or None
+
+
+def warn_orphan_notes(brand_keys: list[str]) -> list[str]:
+    """Return the note files this build will ignore, and log each one.
+
+    A note is picked up by filename alone, so ``porshe.action-items.md`` or
+    ``porsche.actions.md`` is not an error anywhere — it is simply never read,
+    and the page keeps rendering the placeholder as if nobody had written
+    anything. Naming the orphans out loud is what turns that into a typo the
+    author can see.
+    """
+    if not _NOTES_DIR.is_dir():
+        return []
+    orphans: list[str] = []
+    for p in sorted(_NOTES_DIR.glob("*.md")):
+        brand, _, section = p.stem.partition(".")
+        if brand in brand_keys and section in _NOTE_SECTIONS:
+            continue
+        orphans.append(p.name)
+        _LOGGER.warning(
+            "Note %s matches no brand+section — expected {brand}.{%s}.md",
+            p.name, "|".join(_NOTE_SECTIONS),
+        )
+    return orphans
+
+
+def _note_or(brand: str, section: str, placeholder: str) -> str:
+    note = _load_note(brand, section)
+    return note if note is not None else placeholder
+
+
+def _flavors_block(brand: str) -> str:
+    """Optional '## Flavors' section — only brands that ship more than one
+    package carry one, so it is absent (not empty) for everyone else."""
+    note = _load_note(brand, "flavors")
+    if note is None:
+        return ""
+    return f"## Flavors\n\n{note}\n\n"
+
+
 def _reading_note(status: str, current_version: str | None, observed: str | None) -> str:
     """The one line on the page that says how much to trust the number above it."""
     if status == "stale":
@@ -406,6 +495,16 @@ def emit_brand_atlas(brand: str, brand_cfg: dict[str, Any], current_version: str
     sources    = brand_cfg.get("sources", {})
     now        = datetime.datetime.now(tz=datetime.timezone.utc).strftime("%Y-%m-%d")
     apk_section = _render_apk_section(_load_apk_findings(brand))
+    flavors     = _flavors_block(brand)
+    diff_section = _note_or(
+        brand, "cross-version-diff",
+        "_(Empty — Phase A.3 will populate this from full decompile + diff.)_",
+    )
+    actions_section = _note_or(
+        brand, "action-items",
+        "_(Auto-flagged by the pipeline when new endpoints / headers / "
+        "version-bumps suggest follow-up work.)_",
+    )
 
     src_label = source_name or "(no source succeeded)"
     md = f"""# App Atlas — {display}
@@ -421,7 +520,7 @@ def emit_brand_atlas(brand: str, brand_cfg: dict[str, Any], current_version: str
 | Expected backend | `{backend}` |
 | OLA enforcement known? | {'**YES** (since ' + ola_since + ')' if ola_known else 'No (not observed yet)'} |
 
-## Configured sources (fallback chain)
+{flavors}## Configured sources (fallback chain)
 
 | Source | Configured value |
 |---|---|
@@ -444,11 +543,11 @@ def emit_brand_atlas(brand: str, brand_cfg: dict[str, Any], current_version: str
 
 ## Cross-version diff
 
-_(Empty — Phase A.3 will populate this from full decompile + diff.)_
+{diff_section}
 
 ## Action items
 
-_(Auto-flagged by the pipeline when new endpoints / headers / version-bumps suggest follow-up work.)_
+{actions_section}
 
 ---
 
@@ -533,6 +632,7 @@ def main(argv: list[str] | None = None) -> int:
         args.with_apk_extraction = True
 
     config = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
+    warn_orphan_notes(list(config["brands"].keys()))
     cache = load_cache()
     cache.setdefault("brands", {})
 

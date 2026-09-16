@@ -1374,6 +1374,9 @@
       "reminder_tyre_repair_kit": {
         "name": "Påmindelse om dækreparationssæt"
       },
+      "brake_pads_prediction": {
+        "name": "Forudsigelse af bremseklodsslid"
+      },
       "exterior_color": {
         "name": "Udvendig farve"
       },
@@ -2143,6 +2146,16 @@
     }
   },
   "services": {
+    "unlock_trunk": {
+      "name": "Lås bagklappen op (Porsche, eksperimentel)",
+      "description": "Låser kun bagklappen op på den angivne Porsche — dørene forbliver låst. Kun Porsche; andre mærker afviser kaldet. Kræver S-PIN. Eksperimentel: udledt af My Porsche-appen og endnu ikke verificeret på en rigtig bil.",
+      "fields": {
+        "vin": {
+          "name": "VIN",
+          "description": "Bilens VIN."
+        }
+      }
+    },
     "start_climate_control": {
       "name": "Start klimastyring (udvidet)",
       "description": "Start forkonditionering med individuelle sædevarmere, rudevarme, klimatilstand og adfærd ved oplåsning. Gælder kun for Audi og VW EU (CARIAD BFF). Andre mærker falder igennem til den grundlæggende `start_climatisation`-tjeneste. Alle payload-felter undtagen `device_id` er valgfrie - udeladte felter beholder mærkets standard.",

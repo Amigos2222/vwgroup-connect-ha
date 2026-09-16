@@ -122,12 +122,15 @@ def test_keygen_records_pii_free_probe_outcomes() -> None:
     asyncio.run(c.mint_api_key(VIN))
     assert c.probe_outcomes["skoda_official_keygen"] == "POST 2xx no-key [id,name]"
 
-    # list success → counts only
+    # list success → counts only (8.16.0: plus the per-key count + status vocabulary,
+    # both backend enum labels / numbers — still no VIN, id or secret)
     c = _native_client()
     c._get = AsyncMock(return_value={  # type: ignore[method-assign]
         "maxKeys": 5, "vehicleKeys": [{"vin": VIN, "keysRemaining": 4}]})
     asyncio.run(c.list_api_keys())
-    assert c.probe_outcomes["skoda_official_keygen_list"] == "GET 2xx maxKeys=5 vins=1"
+    assert c.probe_outcomes["skoda_official_keygen_list"] == (
+        "GET 2xx maxKeys=5 vins=1 keys=0 statuses=[]"
+    )
 
     # list 401 → status only
     c = _native_client()

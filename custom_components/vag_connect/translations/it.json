@@ -1374,6 +1374,9 @@
       "reminder_tyre_repair_kit": {
         "name": "Promemoria kit riparazione gomme"
       },
+      "brake_pads_prediction": {
+        "name": "Previsione usura pastiglie freno"
+      },
       "exterior_color": {
         "name": "Colore esterno"
       },
@@ -2143,6 +2146,16 @@
     }
   },
   "services": {
+    "unlock_trunk": {
+      "name": "Sblocca il bagagliaio (Porsche, sperimentale)",
+      "description": "Sblocca solo il portellone della Porsche indicata — le portiere restano bloccate. Solo Porsche; le altre marche rifiutano la chiamata. Richiede il S-PIN. Sperimentale: dedotto dall’app My Porsche e non ancora verificato su un’auto reale.",
+      "fields": {
+        "vin": {
+          "name": "VIN",
+          "description": "VIN del veicolo."
+        }
+      }
+    },
     "start_climate_control": {
       "name": "Avvia climatizzazione (Rich)",
       "description": "Avvia il precondizionamento con riscaldamento sedili individuale, riscaldamento vetri, modalità clima e comportamento allo sblocco. Si applica solo ad Audi e VW EU (CARIAD BFF). Le altre marche ricadono sul servizio di base `start_climatisation`. Tutti i campi del payload tranne `device_id` sono opzionali - i campi omessi mantengono l'impostazione predefinita della marca.",

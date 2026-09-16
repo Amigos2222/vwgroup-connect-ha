@@ -1566,6 +1566,24 @@ def _is_envelope_noise(key: str) -> bool:
     return leaf in _ENVELOPE_NOISE_LEAVES or bool(_ENVELOPE_UUID_RE.match(leaf))
 
 
+# v4.7.12 (Scout #1421 follow-up) — containers whose ``.is_set`` present-flag the
+# EU Data Act export ships as a SEPARATE data point ("<container>.is_set": true).
+# Consumed as metadata in map_dataset_to_vehicle_data (see there for WHY none of
+# them feeds an entity). Deliberately NOT folded into _ENVELOPE_NOISE_LEAVES: that
+# set silences a leaf under EVERY container, which would also hide the is_set of a
+# container we have not identified yet — the no-suppression policy forbids that.
+# Named, already-mapped containers only.
+_IS_SET_METADATA_CONTAINERS: tuple[str, ...] = (
+    "acknowledge",
+    "battery_level_HV",
+    "enginehood",
+    "hvbatterytemperature",
+    "mileage",
+    "outdoor_temperature",
+    "trunk",
+)
+
+
 def map_dataset_to_vehicle_data(
     fields: dict[str, str],
     d: VehicleData,
@@ -3044,6 +3062,32 @@ def map_dataset_to_vehicle_data(
     _pb = _pb_real if _pb_real is not None else _pb_flag
     if _pb is not None:
         d.parking_brake_engaged = str(_pb).lower() in ("true", "1", "set")
+
+    # v4.7.12 (Scout #1421 follow-up — VW ID.x portal export, 2026-09-16) — the
+    # export ships seven container present-flags as their OWN data points, each
+    # "<container>.is_set" = "true": acknowledge, battery_level_HV, enginehood,
+    # hvbatterytemperature, mileage, outdoor_temperature, trunk. Every one of
+    # those containers is already mapped (HV SoC, hood, HV battery temperature,
+    # odometer, outdoor temperature, trunk), so the flag carries NO reading — it
+    # only says "this container was populated". Unconsumed, all seven re-reported
+    # to the Vehicle Data Scout as undiscovered fields on every single poll.
+    #
+    # Consume them as pure envelope metadata: no entity, no inference. Unlike
+    # parking_brake.is_set / parkinglightstate.is_set above — which flag ONE
+    # boolean datum and may therefore stand in as a last-resort fallback — these
+    # sit on containers holding several leaves, so "populated" says nothing about
+    # whether the bonnet or the boot is OPEN. Inferring a state from them would
+    # report an open boot on a closed car, so enginehood/trunk get no fallback
+    # here; the real open-state paths remain the only source. acknowledge is pure
+    # envelope and has no target at all.
+    #
+    # The underscore twin is listed next to each dotted name for the flat
+    # dialects, exactly like the two is_set sites above; a spelling the export
+    # never ships is inert. first() does the Scout bookkeeping (marks the name
+    # and its walker synonyms used), which is what drops them from
+    # raw_unmapped_fields.
+    for _isset_container in _IS_SET_METADATA_CONTAINERS:
+        first(f"{_isset_container}.is_set", f"{_isset_container}_is_set")
 
     # bare `open` → sunroof: LOW confidence (3 dict definitions). Per the plan,
     # leave to raw_unmapped_fields until live-test; intentionally NOT mapped.

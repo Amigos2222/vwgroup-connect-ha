@@ -382,6 +382,16 @@ def _register_services(hass: HomeAssistant) -> None:
     async def _handle_unlock(call: ServiceCall) -> None:
         await _coord_writeable(call.data["vin"]).async_unlock(call.data["vin"])
 
+    async def _handle_unlock_trunk(call: ServiceCall) -> None:
+        """Porsche-only tailgate unlock (My Porsche 20.26.37 ``TRUNK_UNLOCK``).
+
+        Same shape as ``_handle_unlock`` — VIN in, read-only/portal gate via
+        ``_coord_writeable`` — because it is the same class of action. The
+        brand + capability gate and the S-PIN requirement live in the
+        coordinator method, next to the command dispatch they protect.
+        """
+        await _coord_writeable(call.data["vin"]).async_unlock_trunk(call.data["vin"])
+
     async def _handle_start_clim(call: ServiceCall) -> None:
         await _coord_writeable(call.data["vin"]).async_start_climatisation(call.data["vin"])
 
@@ -713,6 +723,10 @@ def _register_services(hass: HomeAssistant) -> None:
     for name, handler, schema in [
         ("lock",                           _handle_lock,                SERVICE_VIN_SCHEMA),
         ("unlock",                         _handle_unlock,              SERVICE_VIN_SCHEMA),
+        # Porsche tailgate unlock — VIN only, exactly like ``unlock``: the
+        # S-PIN comes from the config entry, never from the service call, so
+        # automations never carry the PIN in plain YAML.
+        ("unlock_trunk",                   _handle_unlock_trunk,        SERVICE_VIN_SCHEMA),
         ("start_climatisation",            _handle_start_clim,          SERVICE_VIN_SCHEMA),
         ("stop_climatisation",             _handle_stop_clim,           SERVICE_VIN_SCHEMA),
         ("start_charging",                 _handle_start_charge,        SERVICE_VIN_SCHEMA),
@@ -1086,6 +1100,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: VagConnectConfigEntry) 
             "set_location_target_soc",
             "set_seat_heating",
             "ask_assistant",
+            # Porsche tailgate unlock (experimental)
+            "unlock_trunk",
         ]:
             if hass.services.has_service(DOMAIN, svc):
                 hass.services.async_remove(DOMAIN, svc)

@@ -1374,6 +1374,9 @@
       "reminder_tyre_repair_kit": {
         "name": "Tyre repair kit reminder"
       },
+      "brake_pads_prediction": {
+        "name": "Brake Pads Wear Prediction"
+      },
       "exterior_color": {
         "name": "Exterior Colour"
       },
@@ -2143,6 +2146,16 @@
     }
   },
   "services": {
+    "unlock_trunk": {
+      "name": "Unlock trunk (Porsche, experimental)",
+      "description": "Unlocks the tailgate only on the given Porsche — the doors stay locked. Porsche only; other brands reject the call. Requires the S-PIN. Experimental: derived from the My Porsche app and not yet verified against a real car.",
+      "fields": {
+        "vin": {
+          "name": "VIN",
+          "description": "VIN of the vehicle."
+        }
+      }
+    },
     "start_climate_control": {
       "name": "Start Climate Control (Rich)",
       "description": "Start pre-conditioning with individual seat heaters, glass heating, climate mode and at-unlock behaviour. Only applies to Audi and VW EU (CARIAD BFF). Other brands fall through to the basic `start_climatisation` service. All payload fields except `device_id` are optional - omitted fields keep the brand default.",

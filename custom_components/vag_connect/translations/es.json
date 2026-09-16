@@ -1374,6 +1374,9 @@
       "reminder_tyre_repair_kit": {
         "name": "Recordatorio de kit de reparación"
       },
+      "brake_pads_prediction": {
+        "name": "Predicción de desgaste de pastillas de freno"
+      },
       "exterior_color": {
         "name": "Color exterior"
       },
@@ -2143,6 +2146,16 @@
     }
   },
   "services": {
+    "unlock_trunk": {
+      "name": "Abrir el maletero (Porsche, experimental)",
+      "description": "Abre únicamente el portón trasero del Porsche indicado — las puertas siguen bloqueadas. Solo Porsche; otras marcas rechazan la llamada. Requiere el S-PIN. Experimental: deducido de la aplicación My Porsche y aún no verificado en un coche real.",
+      "fields": {
+        "vin": {
+          "name": "VIN",
+          "description": "VIN del vehículo."
+        }
+      }
+    },
     "start_climate_control": {
       "name": "Iniciar control de climatización (avanzado)",
       "description": "Inicia el preacondicionamiento con calefacción individual de asientos, calefacción de cristales, modo de climatización y comportamiento al desbloquear. Solo se aplica a Audi y VW EU (CARIAD BFF). Otras marcas recurren al servicio básico `start_climatisation`. Todos los campos del payload excepto `device_id` son opcionales: los campos omitidos mantienen el valor predeterminado de la marca.",

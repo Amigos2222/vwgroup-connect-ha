@@ -179,8 +179,9 @@ CAPABILITY_MAP: Final[dict[str, dict[str, "str | tuple[str, ...]"]]] = {
     # ─────────────────────────────────────────────────────────────────
     # ─────────────────────────────────────────────────────────────────
     # v3.2.1 — the ENTIRE Škoda table is now androguard-verified against the
-    # real MySkoda 8.15.0 ``CapabilityId`` enum (DEX class ``Lnj0/b;``, 156
-    # members, dumped from its own <clinit>). The old kebab/camel guesses
+    # real MySkoda ``CapabilityId`` enum (DEX class ``Lnj0/b;``, dumped from its
+    # own <clinit>): 156 members in 8.15.0, 158 in 8.16.0 (vc 260821007), which
+    # adds ``BATTERY_HEALTH_STATE`` and ``PUBLIC_API_KEY_MANAGEMENT``. The old kebab/camel guesses
     # (``access`` / ``honk-and-flash`` / ``charging`` / ``departure-timers``)
     # never match what the garage-doc capability list actually sends, so once
     # the per-VIN cache populates ``vehicle_supports_capability`` reported them
@@ -226,6 +227,14 @@ CAPABILITY_MAP: Final[dict[str, dict[str, "str | tuple[str, ...]"]]] = {
         # gates the OTA entity isn't grounded from a live sample yet, so accept
         # either rather than guess one and risk hiding it.
         "command_software_update": ("ONLINE_REMOTE_UPDATE", "VEHICLE_HEALTH_INSPECTION"),
+        # MyŠkoda 8.16.0 (vc 260821007) — the two enum members 8.15.0 did not
+        # have. BATTERY_HEALTH_STATE is what the app gates its battery
+        # State-of-Health card on, i.e. the read ``SkodaClient.get_battery_health``
+        # performs; PUBLIC_API_KEY_MANAGEMENT gates the public-API key screen the
+        # official-API enrolment already drives. Read-only rows (no command
+        # binding) so the gate answers cleanly instead of guessing.
+        "command_battery_health": "BATTERY_HEALTH_STATE",
+        "command_public_api_keys": "PUBLIC_API_KEY_MANAGEMENT",
     },
     # ─────────────────────────────────────────────────────────────────
     # VW NA + Porsche — different backends, capabilities not yet

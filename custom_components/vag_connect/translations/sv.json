@@ -1374,6 +1374,9 @@
       "reminder_tyre_repair_kit": {
         "name": "Påminnelse om däckreparationssats"
       },
+      "brake_pads_prediction": {
+        "name": "Prognos för bromsbeläggslitage"
+      },
       "exterior_color": {
         "name": "Utvändig färg"
       },
@@ -2143,6 +2146,16 @@
     }
   },
   "services": {
+    "unlock_trunk": {
+      "name": "Lås upp bagageluckan (Porsche, experimentell)",
+      "description": "Låser endast upp bakluckan på den angivna Porschen — dörrarna förblir låsta. Endast Porsche; andra märken avvisar anropet. Kräver S-PIN. Experimentell: härledd från My Porsche-appen och ännu inte verifierad på en riktig bil.",
+      "fields": {
+        "vin": {
+          "name": "VIN",
+          "description": "Fordonets VIN."
+        }
+      }
+    },
     "start_climate_control": {
       "name": "Starta klimatstyrning (utökad)",
       "description": "Starta förkonditionering med enskilda sätesvärmare, rutvärme, klimatläge och beteende vid upplåsning. Gäller endast Audi och VW EU (CARIAD BFF). Övriga märken faller tillbaka på den grundläggande tjänsten `start_climatisation`. Alla nyttolastfält utom `device_id` är valfria - utelämnade fält behåller märkets standardvärde.",

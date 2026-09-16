@@ -1374,6 +1374,9 @@
       "reminder_tyre_repair_kit": {
         "name": "Připomínka opravné sady"
       },
+      "brake_pads_prediction": {
+        "name": "Předpověď opotřebení brzdových destiček"
+      },
       "exterior_color": {
         "name": "Barva karoserie"
       },
@@ -2143,6 +2146,16 @@
     }
   },
   "services": {
+    "unlock_trunk": {
+      "name": "Odemknout kufr (Porsche, experimentální)",
+      "description": "Odemkne pouze páté dveře uvedeného Porsche — dveře zůstanou zamčené. Pouze Porsche; ostatní značky volání odmítnou. Vyžaduje S-PIN. Experimentální: odvozeno z aplikace My Porsche a zatím neověřeno na skutečném voze.",
+      "fields": {
+        "vin": {
+          "name": "VIN",
+          "description": "VIN vozidla."
+        }
+      }
+    },
     "start_climate_control": {
       "name": "Spustit klimatizaci (rozšířené)",
       "description": "Spustí předtemperování s jednotlivými vyhříváními sedadel, vyhříváním skel, režimem klimatizace a chováním při odemčení. Platí pouze pro Audi a VW EU (CARIAD BFF). U ostatních značek se použije základní služba `start_climatisation`. Všechna pole payloadu kromě `device_id` jsou volitelná – vynechaná pole zachovají výchozí nastavení značky.",

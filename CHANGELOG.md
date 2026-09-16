@@ -42,6 +42,8 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+## [4.7.12] - 2026-09-17 — What the new Škoda and Porsche apps brought, plus the MBB market fix
+
 ### Fixed
 - **MBB commands on a car outside Germany no longer default to the `/VW/DE/` market path.** The
   final charge/climate action is the only leg that carries a market segment; it came from the
@@ -50,6 +52,29 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   every MBB command logs one line with the service, whether the car's service list grants it, the
   host VW handed us and the market segment with its source — no VIN (#584, thanks @pp2stay for the
   controlled re-test).
+- **Scout: seven `*.is_set` envelope flags no longer show up as undiscovered fields** (#1421, thanks
+  @skornehl). They say "this block was populated"; the values they belong to were already mapped.
+
+### Added
+- **Škoda: battery state of health.** MyŠkoda 8.16.0 added a battery-health read; the *Battery State
+  of Health* sensor now fills on Škoda cars that report it, with the health status as an attribute.
+- **Škoda: brake-pad wear prediction.** The predictive-maintenance feed grew a predictions block;
+  a new diagnostic sensor shows it (*Brake Pads Wear Prediction*).
+- **Škoda: official API key minting checks the car's capability first.** Cars without
+  `PUBLIC_API_KEY_MANAGEMENT` are skipped with a clear diagnostic reason instead of a bare 400
+  (#1286, #1310 — this is the likely explanation for both reports).
+- **Porsche: charging session history.** The app's charging history (per session: start, end,
+  plug-in/out, duration, AC/DC, average and peak power, energy, start and end battery %) now feeds the
+  existing last-charging-session sensors and the recent-sessions attribute — the data was already being
+  fetched and dropped.
+- **Porsche: `unlock_trunk` service (experimental).** The app now exposes the tailgate unlock as a
+  user action; the command existed in the integration but had no service. Same S-PIN flow as unlock;
+  not live-verified yet.
+- **Porsche: more raw-capture measurement keys** (trip statistics short/long/cyclic, dampers, tyre
+  sealant, tyre-pressure warnings) so the Scout can show their shape.
+- **App Atlas tracks the rest-of-world Porsche app** (`de.porsche.one`) next to the North-America
+  build; both are identical code at 20.26.37. The verified 20.26.31→20.26.37 and 8.15.0→8.16.0 diffs
+  are on the atlas pages.
 
 ## [4.7.11] - 2026-09-16 — Competitor parity round: vw.de master data that stays, fresher portal readings, richer timers, honest diagnostics
 

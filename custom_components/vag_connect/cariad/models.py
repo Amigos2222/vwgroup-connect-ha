@@ -504,6 +504,11 @@ class VehicleData:
     # nameplate net capacity (CONF_BATTERY_NOMINAL_KWH); = current max capacity /
     # nominal. Left None otherwise -- VW ships no SoH field, so we never guess it.
     battery_soh_pct: int | None = None
+    # Qualitative State-of-Health verdict that accompanies the percentage on
+    # Škoda (MyŠkoda 8.16.0 BatteryHealthStatusDto.status: HEALTHY /
+    # NEEDS_MAINTENANCE / UNAVAILABLE). Raw backend string — surfaced as an
+    # attribute of the ``battery_soh_pct`` sensor, not as its own entity.
+    battery_health_status: str | None = None
     battery_temp: float | None = None
     fuel_level: int | None = None
     # acpp plug&play — absolute fuel in the tank (litres). Distinct from the
@@ -907,6 +912,25 @@ class VehicleData:
     preferred_workshop_name: str | None = None
     preferred_workshop_address: str | None = None
     preferred_workshop_phone: str | None = None
+
+    # v4.7.12 (MyŠkoda 8.16.0) — PredictiveMaintenanceDto grew a second
+    # top-level array ``predictions`` beside the service ``reminders``.
+    # PredictionTypeDto has exactly one value today: BRAKE_PADS. The
+    # wear PREDICTION ("replace soon / replace now") is a different
+    # signal from the brake inspection DUE-DATES above, which come off
+    # the service plan — hence its own field rather than folding into
+    # ``brake_pads_front_inspection_due_at``.
+    #
+    # State is the lowercased status; the three companion strings back
+    # the sensor's attributes (see sensor.py). ``active_lead_id`` is
+    # nullable in the DTO (only set while a service lead is open). The
+    # matching reset endpoint is owner-only WRITE and deliberately not
+    # wired. Skoda-only; phantom-protected via ``_DATA_PRESENT_REQUIRED``.
+    brake_pads_prediction: str | None = None
+    brake_pads_prediction_type: str | None = None
+    brake_pads_prediction_name: str | None = None
+    brake_pads_prediction_status_description: str | None = None
+    brake_pads_prediction_active_lead_id: str | None = None
 
     # v2.8.1 — 13 P1 sensor gaps observed during the goncal + DanielBie
     # bug-report cycle on issue #306. The OLA backend ships these fields

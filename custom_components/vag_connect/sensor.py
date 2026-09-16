@@ -830,6 +830,16 @@ SENSOR_DESCRIPTIONS: tuple[VagSensorDescription, ...] = (
         icon="mdi:car-tire-alert",
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
+    # v4.7.12 (8.16.0 APK) — Škoda brake-pad WEAR PREDICTION from the same
+    # predictive-maintenance response (read-only; state = lowercased status,
+    # details in attributes). Phantom-gated like the reminders above.
+    VagSensorDescription(
+        key="brake_pads_prediction",
+        translation_key="brake_pads_prediction",
+        data_key="brake_pads_prediction",
+        icon="mdi:car-brake-pad",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
     # v2.31.0 (8.15.0 APK) — Škoda departure-timer times (read-only).
     VagSensorDescription(
         key="departure_timer_1_time",
@@ -3838,6 +3848,9 @@ _DATA_PRESENT_REQUIRED: frozenset[str] = frozenset({
     "reminder_seasonal_tyre_change",
     "reminder_first_aid_kit",
     "reminder_tyre_repair_kit",
+    # v4.7.12 — Škoda brake-pad wear prediction (8.16.0 only; older firmware
+    # and every other brand leave the field absent → no phantom entity).
+    "brake_pads_prediction",
     "departure_timer_1_time",
     "departure_timer_2_time",
     "departure_timer_3_time",
@@ -4516,6 +4529,14 @@ class VagConnectSensor(VagConnectEntity, SensorEntity):
             modes = self._vehicle.get("available_charge_modes")
             if isinstance(modes, list) and modes:
                 return json_safe_dict({"available_modes": modes})
+        # Škoda (MyŠkoda 8.16.0) ships a qualitative State-of-Health verdict
+        # next to the percentage. It belongs to the same reading, so it rides as
+        # an attribute of the existing battery_soh_pct sensor instead of adding a
+        # second entity for one string.
+        if self.entity_description.key == "battery_soh_pct":
+            health = self._vehicle.get("battery_health_status")
+            if isinstance(health, str) and health:
+                return json_safe_dict({"health_status": health})
         # b1/A6 — raw field discovery: the full {field: value} set as attributes
         # on the one raw_api_fields diagnostic sensor (state stays the count).
         if self.entity_description.key == "raw_api_fields":
@@ -4571,6 +4592,22 @@ class VagConnectSensor(VagConnectEntity, SensorEntity):
             ts = self._vehicle.get("last_lock_action_at")
             if isinstance(ts, str) and ts:
                 return json_safe_dict({"last_lock_action_at": ts})
+        # v4.7.12 (8.16.0 APK) — the brake-pad prediction's state stays the bare
+        # status ("ok"/"warning"/"critical"/"no_data") so templates can compare it
+        # directly; the app's human-readable label + description and the service
+        # lead id ride along as attributes (same pattern as service_due_in_days).
+        if self.entity_description.key == "brake_pads_prediction":
+            pred_attrs: dict[str, Any] = {}
+            for src, dst in (
+                ("brake_pads_prediction_name", "name"),
+                ("brake_pads_prediction_status_description", "status_description"),
+                ("brake_pads_prediction_active_lead_id", "active_lead_id"),
+                ("brake_pads_prediction_type", "prediction_type"),
+            ):
+                val = self._vehicle.get(src)
+                if isinstance(val, str) and val:
+                    pred_attrs[dst] = val
+            return json_safe_dict(pred_attrs) if pred_attrs else None
         return None
 
     @property

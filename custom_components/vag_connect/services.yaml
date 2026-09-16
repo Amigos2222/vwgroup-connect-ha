@@ -106,6 +106,22 @@ unlock:
       selector:
         text:
 
+unlock_trunk:
+  name: Kofferraum entriegeln (Porsche, experimentell)
+  description: >-
+    Entriegelt NUR die Heckklappe des angegebenen Porsche — die Türen
+    bleiben verriegelt. Nur Porsche; andere Marken lehnen den Aufruf ab.
+    S-PIN erforderlich. Experimentell: aus der My-Porsche-App abgeleitet,
+    aber noch nicht an einem echten Fahrzeug verifiziert.
+  fields:
+    vin:
+      name: Fahrzeugidentifikationsnummer (VIN)
+      description: Die VIN des Fahrzeugs.
+      required: true
+      example: "WP0ZZZ00000000000"
+      selector:
+        text:
+
 start_climatisation:
   name: Klimatisierung starten
   description: Startet die Vorklimatisierung des Fahrzeugs.

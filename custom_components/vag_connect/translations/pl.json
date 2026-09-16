@@ -1374,6 +1374,9 @@
       "reminder_tyre_repair_kit": {
         "name": "Przypomnienie o zestawie naprawczym"
       },
+      "brake_pads_prediction": {
+        "name": "Prognoza zużycia klocków hamulcowych"
+      },
       "exterior_color": {
         "name": "Kolor nadwozia"
       },
@@ -2143,6 +2146,16 @@
     }
   },
   "services": {
+    "unlock_trunk": {
+      "name": "Odblokuj bagażnik (Porsche, eksperymentalne)",
+      "description": "Odblokowuje wyłącznie klapę bagażnika wskazanego Porsche — drzwi pozostają zamknięte. Tylko Porsche; inne marki odrzucają wywołanie. Wymaga kodu S-PIN. Eksperymentalne: wywnioskowane z aplikacji My Porsche i jeszcze nieprzetestowane na prawdziwym samochodzie.",
+      "fields": {
+        "vin": {
+          "name": "VIN",
+          "description": "VIN pojazdu."
+        }
+      }
+    },
     "start_climate_control": {
       "name": "Uruchom klimatyzację (rozszerzone)",
       "description": "Uruchamia wstępne przygotowanie klimatyczne z indywidualnymi podgrzewaczami foteli, ogrzewaniem szyb, trybem klimatyzacji i zachowaniem po odblokowaniu. Dotyczy tylko Audi i VW EU (CARIAD BFF). Inne marki korzystają z podstawowej usługi `start_climatisation`. Wszystkie pola ładunku oprócz `device_id` są opcjonalne — pominięte pola zachowują domyślne ustawienia marki.",
