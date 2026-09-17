@@ -42,6 +42,8 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+## [4.7.13] - 2026-09-17 — Three fixes the reporters' own captures found
+
 ### Fixed
 - **vw.de: colour, model and renders really arrive now when the live reads are walled (#465, toglo's
   4.7.11 log).** 4.7.11 fetched them on a walled poll and then threw the result away by re-raising the
