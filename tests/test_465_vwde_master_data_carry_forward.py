@@ -170,6 +170,10 @@ async def test_walled_core_read_returns_tail_data_instead_of_reraising(
 
     # the wall is attributable in diagnostics: status-only, keyed by read name
     assert conn.probe_outcomes.get("vwde_core_read:charging") == "401"
+    # the tail reads record their own outcome so diagnostics can tell a refused
+    # render/master-data read apart from one that answered with nothing
+    assert conn.probe_outcomes.get("vwde_images") == "200"
+    assert conn.probe_outcomes.get("vwde_master_details") == "200"
 
     # exactly one INFO line names the walled read; no VIN / query leaked
     info = [r for r in caplog.records if r.levelno == logging.INFO

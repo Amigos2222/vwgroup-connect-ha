@@ -1622,13 +1622,15 @@ class WebsiteAuthProxyConnector:
         info = AuthproxyVehicleInfo()
         got = False
         details = await self._get_json(
-            build_vehicle_details_url(vin), soft=True, optional=True
+            build_vehicle_details_url(vin), soft=True, optional=True,
+            record_as="vwde_master_details",  # #465 — see get_exterior_images
         )
         if details is not None:
             info = parse_vehicle_details(details, info)
             got = True
         data = await self._get_json(
-            build_vehicle_data_url(vin), soft=True, optional=True
+            build_vehicle_data_url(vin), soft=True, optional=True,
+            record_as="vwde_master_data",  # #465
         )
         if data is not None:
             info = parse_vehicle_data(data, info)
@@ -1911,7 +1913,12 @@ class WebsiteAuthProxyConnector:
         if cached is not None and (time.monotonic() - cached[0]) < _STATIC_IMAGES_TTL_S:
             return cached[1]
 
-        body = await self._get_json(build_vehicle_images_url(vin), soft=True)
+        # #465 (toglo) — record the outcome so diagnostics can tell "the render
+        # read was refused" apart from "it answered but carried nothing";
+        # a successful read logs nothing, so the log alone cannot say.
+        body = await self._get_json(
+            build_vehicle_images_url(vin), soft=True, record_as="vwde_images",
+        )
         if body is None:
             # fail-soft → reuse a prior good list rather than dropping the renders.
             return cached[1] if cached is not None else []

@@ -48,6 +48,8 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   core failure, so the channel contributed nothing and the log showed the wall twice per poll. The
   partial snapshot (static fields only) is now returned; a genuinely dead session still triggers the
   refresh and retry.
+  The render and master-data reads also record their own status, so diagnostics can tell a refused
+  read apart from one that answered with nothing.
 
 ## [4.7.12] - 2026-09-17 — What the new Škoda and Porsche apps brought, plus the MBB market fix
 
