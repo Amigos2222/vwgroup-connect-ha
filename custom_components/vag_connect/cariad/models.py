@@ -831,6 +831,11 @@ class VehicleData:
     # 24h freshness window (kept visible on the device_tracker, but flagged so a
     # day-old pin isn't mistaken for a fresh fix). Absent/None = current.
     position_is_stale: bool | None = None
+    # v4.7.13 (#923) — set when the EU Data Act feed DID ship a persLocation leaf
+    # that we refused (malformed / out of range / 0,0). Diagnostics-only: it makes
+    # "the feed carries no position" distinguishable from "we rejected the one it
+    # carried". Holds the value's type name, never the value.
+    position_rejected_shape: str | None = None
 
     # Status
     vehicle_state: str | None = None

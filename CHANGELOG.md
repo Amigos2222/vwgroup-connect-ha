@@ -56,6 +56,9 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   existed — so the request was posted again on every setup, reload and six-hourly retry, twice per
   pass. The same 24-hour backoff now applies without an Identifier; the manual "create data request"
   button still retries immediately.
+- **Diagnostics can tell a missing position from a rejected one (#923).** The portal's `persLocation`
+  leaf is consumed whether or not it parses, so a pin we refused (malformed, out of range, 0/0) used
+  to leave no trace at all. The refusal is now recorded — the value's shape only, never coordinates.
 
 ## [4.7.12] - 2026-09-17 — What the new Škoda and Porsche apps brought, plus the MBB market fix
 

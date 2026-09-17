@@ -82,3 +82,23 @@ def test_heading_has_a_sensor_entity() -> None:
     assert desc.data_key == "heading"
     assert desc.native_unit_of_measurement == DEGREE
     assert desc.entity_registry_enabled_default is False
+
+
+def test_rejected_pers_location_is_visible_in_diagnostics() -> None:
+    """#923 — a persLocation the parser refuses must leave a trace: the leaf is
+    consumed either way, so without this a reporter's file cannot tell "no
+    position in the feed" from "a position we rejected"."""
+    d = _map([{"dataFieldName": "persLocation", "value": "[0, 0]", "key": "k"}])
+    assert d.latitude is None and d.longitude is None
+    assert d.position_rejected_shape == "str"
+
+
+def test_valid_pers_location_sets_no_rejection_marker() -> None:
+    d = _map([{"dataFieldName": "persLocation", "value": "[50.8, 4.4]", "key": "k"}])
+    assert d.latitude == 50.8 and d.longitude == 4.4
+    assert d.position_rejected_shape is None
+
+
+def test_absent_pers_location_sets_no_rejection_marker() -> None:
+    d = _map([{"dataFieldName": "battery_state_report.soc", "value": "50", "key": "k"}])
+    assert d.position_rejected_shape is None

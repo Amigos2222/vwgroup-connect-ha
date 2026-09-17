@@ -1887,7 +1887,21 @@ def map_dataset_to_vehicle_data(
     # 0/0; a charging/destination coord or a placeholder can't pass) and map the
     # companion ``heading``. Cars that don't ship persLocation are unaffected —
     # their position keeps coming from the brand-native parkingposition path.
-    _pers_lat, _pers_lon = _parse_pers_location(first("persLocation"))
+    _pers_raw = first("persLocation")
+    _pers_lat, _pers_lon = _parse_pers_location(_pers_raw)
+    if _pers_raw is not None and (_pers_lat is None or _pers_lon is None):
+        # v4.7.13 (#923, ftothem) — the leaf is consumed by ``first()`` whether we
+        # could read it or not, so a rejected pin used to vanish from both the
+        # Scout and field_sources: a reporter's diagnostics could not tell "VW never
+        # sent a position" apart from "it arrived in a shape we refused". Say so
+        # once per parse — shape only, never the coordinates themselves.
+        d.position_rejected_shape = type(_pers_raw).__name__
+        _LOGGER.debug(
+            "EU Data Act: persLocation present but not a usable coordinate pair "
+            "(type=%s, len=%s) — position left to the other channels",
+            type(_pers_raw).__name__,
+            len(_pers_raw) if isinstance(_pers_raw, (str, list, tuple)) else "?",
+        )
     if _pers_lat is not None and _pers_lon is not None:
         d.latitude = _pers_lat
         d.longitude = _pers_lon
