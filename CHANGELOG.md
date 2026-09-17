@@ -42,6 +42,13 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+### Fixed
+- **vw.de: colour, model and renders really arrive now when the live reads are walled (#465, toglo's
+  4.7.11 log).** 4.7.11 fetched them on a walled poll and then threw the result away by re-raising the
+  core failure, so the channel contributed nothing and the log showed the wall twice per poll. The
+  partial snapshot (static fields only) is now returned; a genuinely dead session still triggers the
+  refresh and retry.
+
 ## [4.7.12] - 2026-09-17 — What the new Škoda and Porsche apps brought, plus the MBB market fix
 
 ### Fixed
