@@ -42,13 +42,15 @@ def _stub(identifiers: dict, kickoff_ts: dict) -> Any:
     return stub
 
 
-def _run(stub, active_return, kickoff_return="NEWID"):
+def _run(stub, active_return, kickoff_return="NEWID", *, force: bool = False):
     scraper = MagicMock()
     scraper.get_active_custom_request_identifier = AsyncMock(return_value=active_return)
     scraper.kickoff_custom_data_request = AsyncMock(return_value=kickoff_return)
     with patch(_SCRAPER, return_value=scraper), patch(_SESS, return_value=MagicMock()):
         asyncio.run(
-            VagConnectCoordinator._ensure_data_act_custom_request_kickoff(stub)
+            VagConnectCoordinator._ensure_data_act_custom_request_kickoff(
+                stub, force=force,
+            )
         )
     return scraper
 
@@ -91,3 +93,39 @@ def test_adopting_an_active_request_still_works() -> None:
     scraper.kickoff_custom_data_request.assert_not_awaited()
     opts = stub.hass.config_entries.async_update_entry.call_args.kwargs["options"]
     assert opts["data_act_identifiers"][_VIN] == "LIVEID"
+
+
+# ── #1412 (chrisbamtam) — backoff also applies with NO cached Identifier ─────────
+#
+# A portal that refuses the request for an account-state reason (400-0011,
+# "primary user relation is missing tag EUDA_SCOPED") never yields an Identifier,
+# so the cached branch above never ran and the POST repeated on every setup,
+# reload and 6-hourly runtime retry — twice per pass, once per duration.
+
+
+def test_no_identifier_recent_attempt_backs_off() -> None:
+    """Attempted recently, still no Identifier → no POST this cycle."""
+    stub = _stub({}, {_VIN: _iso(hours=1)})
+    scraper = _run(stub, active_return=None)
+    scraper.kickoff_custom_data_request.assert_not_awaited()
+
+
+def test_no_identifier_stale_attempt_retries() -> None:
+    """Past the re-verify window the POST is attempted again."""
+    stub = _stub({}, {_VIN: _iso(hours=30)})
+    scraper = _run(stub, active_return=None)
+    scraper.kickoff_custom_data_request.assert_awaited_once()
+
+
+def test_no_identifier_first_ever_attempt_posts() -> None:
+    """No stamp at all (fresh setup) → unchanged first-time behaviour."""
+    stub = _stub({}, {})
+    scraper = _run(stub, active_return=None)
+    scraper.kickoff_custom_data_request.assert_awaited_once()
+
+
+def test_manual_button_bypasses_the_backoff() -> None:
+    """force=True is the user saying "I fixed it on VW's side, try now"."""
+    stub = _stub({}, {_VIN: _iso(hours=1)})
+    scraper = _run(stub, active_return=None, force=True)
+    scraper.kickoff_custom_data_request.assert_awaited_once()

@@ -50,6 +50,12 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   refresh and retry.
   The render and master-data reads also record their own status, so diagnostics can tell a refused
   read apart from one that answered with nothing.
+- **A Data Act request the portal refuses for an account reason is no longer re-sent every few hours
+  (#1412, thanks @chrisbamtam).** When the portal answers "primary user relation is missing tag
+  EUDA_SCOPED" no Identifier is ever stored, and the attempt timestamp was only checked when one
+  existed — so the request was posted again on every setup, reload and six-hourly retry, twice per
+  pass. The same 24-hour backoff now applies without an Identifier; the manual "create data request"
+  button still retries immediately.
 
 ## [4.7.12] - 2026-09-17 — What the new Škoda and Porsche apps brought, plus the MBB market fix
 
