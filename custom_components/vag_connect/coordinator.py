@@ -2305,23 +2305,42 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 # re-verify once (the portal silently drops a request ~24-36h, so we
                 # can't trust the cache forever).
                 cached = existing_map.get(vin)
-                if cached:
-                    ts_raw = kickoff_ts.get(vin)
-                    kicked_at = None
-                    if isinstance(ts_raw, str):
-                        try:
-                            kicked_at = datetime.fromisoformat(ts_raw)
-                        except ValueError:
-                            kicked_at = None
-                    if kicked_at is not None:
-                        if kicked_at.tzinfo is None:
-                            kicked_at = kicked_at.replace(tzinfo=timezone.utc)
-                        age_s = (
-                            datetime.now(tz=timezone.utc) - kicked_at
-                        ).total_seconds()
-                        if age_s < KICKOFF_REVERIFY_S:
-                            new_map[vin] = cached
-                            continue
+                ts_raw = kickoff_ts.get(vin)
+                kicked_at = None
+                if isinstance(ts_raw, str):
+                    try:
+                        kicked_at = datetime.fromisoformat(ts_raw)
+                    except ValueError:
+                        kicked_at = None
+                if kicked_at is not None and kicked_at.tzinfo is None:
+                    kicked_at = kicked_at.replace(tzinfo=timezone.utc)
+                age_s = (
+                    (datetime.now(tz=timezone.utc) - kicked_at).total_seconds()
+                    if kicked_at is not None
+                    else None
+                )
+                if cached and age_s is not None and age_s < KICKOFF_REVERIFY_S:
+                    new_map[vin] = cached
+                    continue
+                # v4.7.13 (#1412, chrisbamtam) — the same backoff must hold when
+                # there is NO Identifier yet. The attempt stamp was written before
+                # every POST but only ever read on the cached branch, so a car the
+                # portal refuses for an account-state reason (e.g. 400-0011,
+                # "primary user relation is missing tag EUDA_SCOPED") was re-POSTed
+                # on every setup/reload and every 6 h runtime retry — two requests
+                # per pass, since both durations are tried. A refusal like that
+                # cannot be fixed by asking again, so wait out the same window; the
+                # manual button (force=True) still bypasses it, which is the lever
+                # for a user who has just fixed something on VW's side.
+                if not cached and not force and age_s is not None:
+                    if age_s < KICKOFF_REVERIFY_S:
+                        _LOGGER.debug(
+                            "Data Act kickoff: VIN %s was attempted %.0f h ago and "
+                            "holds no Identifier — backing off (use the manual "
+                            "button to retry now)",
+                            mask_vin(vin), age_s / 3600.0,
+                        )
+                        continue
                 # No fresh cached request — kick one off. Stamp the attempt FIRST
                 # (and mark changed) so the backoff holds even if this POST fails,
                 # persisted below — an unpersisted stamp wouldn't survive a restart.

@@ -42,6 +42,26 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+## [4.7.13] - 2026-09-17 — Three fixes the reporters' own captures found
+
+### Fixed
+- **vw.de: colour, model and renders really arrive now when the live reads are walled (#465, toglo's
+  4.7.11 log).** 4.7.11 fetched them on a walled poll and then threw the result away by re-raising the
+  core failure, so the channel contributed nothing and the log showed the wall twice per poll. The
+  partial snapshot (static fields only) is now returned; a genuinely dead session still triggers the
+  refresh and retry.
+  The render and master-data reads also record their own status, so diagnostics can tell a refused
+  read apart from one that answered with nothing.
+- **A Data Act request the portal refuses for an account reason is no longer re-sent every few hours
+  (#1412, thanks @chrisbamtam).** When the portal answers "primary user relation is missing tag
+  EUDA_SCOPED" no Identifier is ever stored, and the attempt timestamp was only checked when one
+  existed — so the request was posted again on every setup, reload and six-hourly retry, twice per
+  pass. The same 24-hour backoff now applies without an Identifier; the manual "create data request"
+  button still retries immediately.
+- **Diagnostics can tell a missing position from a rejected one (#923).** The portal's `persLocation`
+  leaf is consumed whether or not it parses, so a pin we refused (malformed, out of range, 0/0) used
+  to leave no trace at all. The refusal is now recorded — the value's shape only, never coordinates.
+
 ## [4.7.12] - 2026-09-17 — What the new Škoda and Porsche apps brought, plus the MBB market fix
 
 ### Fixed

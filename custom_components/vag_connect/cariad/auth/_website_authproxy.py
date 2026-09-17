@@ -1622,13 +1622,15 @@ class WebsiteAuthProxyConnector:
         info = AuthproxyVehicleInfo()
         got = False
         details = await self._get_json(
-            build_vehicle_details_url(vin), soft=True, optional=True
+            build_vehicle_details_url(vin), soft=True, optional=True,
+            record_as="vwde_master_details",  # #465 — see get_exterior_images
         )
         if details is not None:
             info = parse_vehicle_details(details, info)
             got = True
         data = await self._get_json(
-            build_vehicle_data_url(vin), soft=True, optional=True
+            build_vehicle_data_url(vin), soft=True, optional=True,
+            record_as="vwde_master_data",  # #465
         )
         if data is not None:
             info = parse_vehicle_data(data, info)
@@ -1911,7 +1913,12 @@ class WebsiteAuthProxyConnector:
         if cached is not None and (time.monotonic() - cached[0]) < _STATIC_IMAGES_TTL_S:
             return cached[1]
 
-        body = await self._get_json(build_vehicle_images_url(vin), soft=True)
+        # #465 (toglo) — record the outcome so diagnostics can tell "the render
+        # read was refused" apart from "it answered but carried nothing";
+        # a successful read logs nothing, so the log alone cannot say.
+        body = await self._get_json(
+            build_vehicle_images_url(vin), soft=True, record_as="vwde_images",
+        )
         if body is None:
             # fail-soft → reuse a prior good list rather than dropping the renders.
             return cached[1] if cached is not None else []
@@ -2145,7 +2152,7 @@ class WebsiteAuthProxyConnector:
             self.probe_outcomes[f"vwde_core_read:{_core_read}"] = _status
             _LOGGER.info(
                 "vw.de core read '%s' walled for %s (%s); running the render/"
-                "master-data tail anyway then re-raising (#465)",
+                "master-data tail anyway (#465)",
                 _core_read, vin[-6:], exc,
             )
 
@@ -2199,9 +2206,28 @@ class WebsiteAuthProxyConnector:
             _LOGGER.debug("vw.de master-data skipped for %s", vin[-6:])
 
         # #465 — the tail (renders + master data) has now been attempted even on a
-        # walled poll; propagate the core failure so _read_authproxy refreshes +
-        # retries exactly as before (a genuine dead session recovers; a per-car
-        # wall fail-softs to None while the primary channel stands).
+        # walled poll. v4.7.11 re-raised the core failure unconditionally here,
+        # which threw ``d`` — and with it the freshly fetched colour / model /
+        # renders — away: _read_authproxy turned the exception into a refresh +
+        # retry (same wall again) and then None, so nothing from vw.de ever
+        # reached the merge (toglo's 4.7.11 log: two 'walled' lines per poll,
+        # pictures still unavailable). Decide by what the tail produced:
+        #   • tail delivered something → the session is alive and the wall is
+        #     per-car: return the partial snapshot (static fields only; the
+        #     live fields stay None and the primary channel keeps them).
+        #   • tail delivered nothing → the session is genuinely dead (or the
+        #     car serves nothing at all): re-raise so the caller's refresh +
+        #     retry runs exactly as before.
         if _core_exc is not None:
-            raise _core_exc
+            _tail_ok = bool(
+                d.image_urls or d.model or d.model_year
+                or d.exterior_color or d.engine_power
+            )
+            if not _tail_ok:
+                raise _core_exc
+            _LOGGER.debug(
+                "vw.de: returning master data / renders for %s despite the walled "
+                "core read (partial snapshot, live fields left to the primary)",
+                vin[-6:],
+            )
         return d

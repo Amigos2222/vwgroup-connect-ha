@@ -82,7 +82,7 @@ class TestStaticMasterCarryForward:
         assert notes == []
 
 
-# ── (B) authproxy: a walled core read still runs the tail, then re-raises ────────
+# ── (B) authproxy: a walled core read still runs the tail and returns its data ──
 
 _RELATIONS_TEXT = '{"relations":[{"vin":"%s","role":"PRIMARY_USER"}]}' % VIN
 _IMAGES_JSON = {"images": [
@@ -146,7 +146,7 @@ class _ChargingWalledSession:
 
 
 @pytest.mark.asyncio
-async def test_walled_core_read_still_runs_tail_and_reraises(
+async def test_walled_core_read_returns_tail_data_instead_of_reraising(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     session = _ChargingWalledSession()
@@ -155,8 +155,14 @@ async def test_walled_core_read_still_runs_tail_and_reraises(
         logging.INFO,
         "custom_components.vag_connect.cariad.auth._website_authproxy",
     ):
-        with pytest.raises(AuthenticationError):
-            await conn.get_vehicle_data(VIN)
+        d = await conn.get_vehicle_data(VIN)
+
+    # v4.7.12+ — the walled poll returns the PARTIAL snapshot the tail built
+    # (static fields only); 4.7.11 re-raised here and threw it away.
+    assert d.image_urls == {"side_left": "https://vw.example/side.png"}
+    assert d.model == "Tayron" and d.model_year == 2026
+    assert d.exterior_color == "Deep Black"
+    assert d.battery_soc is None  # live fields stay with the primary channel
 
     # the tail was attempted despite the walled charging read
     assert any("vehicleimages/exterior" in u for u in session.gets)
@@ -164,6 +170,10 @@ async def test_walled_core_read_still_runs_tail_and_reraises(
 
     # the wall is attributable in diagnostics: status-only, keyed by read name
     assert conn.probe_outcomes.get("vwde_core_read:charging") == "401"
+    # the tail reads record their own outcome so diagnostics can tell a refused
+    # render/master-data read apart from one that answered with nothing
+    assert conn.probe_outcomes.get("vwde_images") == "200"
+    assert conn.probe_outcomes.get("vwde_master_details") == "200"
 
     # exactly one INFO line names the walled read; no VIN / query leaked
     info = [r for r in caplog.records if r.levelno == logging.INFO
@@ -173,6 +183,25 @@ async def test_walled_core_read_still_runs_tail_and_reraises(
     assert "charging" in msg
     assert VIN not in msg          # only the last-6 mask may appear
     assert "?" not in msg          # never the query string
+
+
+@pytest.mark.asyncio
+async def test_walled_core_read_with_empty_tail_still_reraises() -> None:
+    """Session genuinely dead: core read AND tail fail → re-raise so the caller's
+    refresh + retry runs (unchanged behaviour for the dead-session case)."""
+
+    class _AllWalledSession(_ChargingWalledSession):
+        def get(self, url: str, **kw: Any) -> _FakeResp:
+            self.gets.append(url)
+            if "relations" in url:
+                return _FakeResp(url, text=_RELATIONS_TEXT)
+            return _FakeResp(url, status=401)
+
+    session = _AllWalledSession()
+    conn = WebsiteAuthProxyConnector(session, "u@x.z", "pw")  # type: ignore[arg-type]
+    with pytest.raises(AuthenticationError):
+        await conn.get_vehicle_data(VIN)
+    assert conn.probe_outcomes.get("vwde_core_read:charging") == "401"
 
 
 @pytest.mark.asyncio
