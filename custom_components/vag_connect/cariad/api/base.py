@@ -16,6 +16,7 @@ from aiohttp import (
     ClientPayloadError,
     ClientSession,
     ClientTimeout,
+    NonHttpUrlRedirectClientError,
     ServerDisconnectedError,
 )
 
@@ -1357,6 +1358,11 @@ class CariadBaseClient:
                 if "json" not in ct:
                     return None
                 return await resp.json()
+        except NonHttpUrlRedirectClientError:
+            # #1439 — bounced into the brand app's sign-in: an expired session,
+            # so abort the pass exactly as a 401 does. ``from None``: the
+            # exception's text is the redirect target, i.e. a live auth code.
+            raise _AuthStormSignal() from None
         except _TRANSIENT_NET_ERRORS:
             return None
 
@@ -1460,6 +1466,7 @@ class CariadBaseClient:
         # caller-supplied UA wins and BrandConfig.user_agent is only the default.
         headers.setdefault("User-Agent", self._brand.user_agent)
 
+        redirected_to_app = False
         try:
             async with self._session.request(
                 method, url, headers=headers, timeout=ClientTimeout(total=_REQUEST_TIMEOUT), **kwargs
@@ -1496,6 +1503,12 @@ class CariadBaseClient:
                 if "json" in ct:
                     return await resp.json()
                 return await resp.text()
+        except NonHttpUrlRedirectClientError:
+            # #1439 — handled just below, deliberately outside this block: the
+            # exception's text is the redirect target (a live authorization
+            # code), and anything raised while handling it here would carry it
+            # as __context__ into a logged traceback.
+            redirected_to_app = True
         except _TRANSIENT_NET_ERRORS as err:
             if _attempt < 3:
                 wait = (2 ** _attempt) * 3
@@ -1510,6 +1523,30 @@ class CariadBaseClient:
                 )
             # drop the raw {err} — it would sit in self.body; class name suffices.
             raise APIError(0, url, f"transient: {type(err).__name__}") from err
+        if redirected_to_app:
+            # #1439 — on an expired session the data endpoints answer with a
+            # redirect to the IDP sign-in rather than a 401. With the IDP's
+            # session cookie still in the jar, sign-in completes silently and
+            # redirects on to the brand app's custom scheme (myaudi://?code=…),
+            # which aiohttp refuses to follow. That is an expired bearer in all
+            # but status code, so recover exactly as the 401 path does: refresh
+            # (a silent full re-login for hybrid_full, which has no refresh
+            # token) and retry once. Before this, the exception escaped both
+            # handlers above — it is neither a 401 nor a transient error — so
+            # the refresh never ran, and on a car that had never polled
+            # successfully the hybrid_full stale watchdog never armed either:
+            # every poll failed and every entity stayed unavailable.
+            if retry:
+                _LOGGER.debug(
+                    "Request redirected into the app sign-in (expired session)"
+                    " — refreshing and retrying once"
+                )
+                await self._refresh_tokens(stale_access_token=token_used)
+                return await self._request(method, url, retry=False, **kwargs)
+            raise AuthenticationError(
+                "Session expired: requests are redirected to the app sign-in"
+                " even after re-authenticating"
+            )
 
     async def _refresh_tokens(
         self, *, for_command: bool = False, stale_access_token: str | None = None

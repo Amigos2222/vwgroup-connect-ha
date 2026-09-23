@@ -42,6 +42,16 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+### Fixed
+- **Audi: a car that signs in but never shows any data now recovers (#1439, thanks @maki040).** On an
+  expired session Audi's data endpoints send the request to the sign-in page instead of answering 401.
+  With the sign-in cookie still valid, that ends at the app's own `myaudi://` address, which Home
+  Assistant cannot follow — so every poll failed with `NonHttpUrlRedirectClientError`, no token refresh
+  ran, and on a car that had never polled successfully the stale-session watchdog never started either:
+  every entity stayed unavailable. The redirect is now treated like a 401 — a silent re-login and one
+  retry; if it happens again, Home Assistant asks you to re-authenticate instead of failing quietly.
+  The redirect carries a live authorization code, so it is kept out of logs and error traces.
+
 ## [4.7.13] - 2026-09-17 — Three fixes the reporters' own captures found
 
 ### Fixed
